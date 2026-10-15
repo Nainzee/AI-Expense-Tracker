@@ -1,0 +1,18 @@
+{
+  "id2label": {
+    "0": "Bakery",
+    "1": "Drinks",
+    "2": "Food",
+    "3": "Household",
+    "4": "Medical",
+    "5": "Personal Care"
+  },
+  "label2id": {
+    "Bakery": 0,
+    "Drinks": 1,
+    "Food": 2,
+    "Household": 3,
+    "Medical": 4,
+    "Personal Care": 5
+  }
+}

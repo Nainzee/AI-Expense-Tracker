@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+.env
+.DS_Store
+*.pt
+*.pth
+*.safetensors
+receipts_db/receipts.json.gradio/
+.gradio/
+receipts_db/receipts.json

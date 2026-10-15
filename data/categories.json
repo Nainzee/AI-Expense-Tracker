@@ -1,0 +1,71 @@
+{
+  "Food": [
+    "rice", "basmati rice", "wheat flour", "atta", "dal", "moong dal",
+    "chana dal", "toor dal", "sugar", "salt", "mustard oil", "sunflower oil",
+    "olive oil", "paneer", "curd", "dahi", "milk", "bread", "eggs",
+    "butter", "cheese", "tomatoes", "potatoes", "onions", "garlic",
+    "ginger", "spinach", "palak", "cabbage", "carrots", "gajar",
+    "maggi noodles", "biscuits", "parle g", "namkeen", "poha",
+    "sooji", "besan", "maida", "cornflour", "pasta", "vermicelli",
+    "oats", "cornflakes", "muesli", "honey", "jam", "pickle", "achar",
+    "papad", "chips", "frozen peas", "frozen corn", "coconut",
+    "turmeric", "haldi", "red chilli powder", "coriander powder",
+    "garam masala", "jeera", "cumin", "black pepper", "cardamom",
+    "cinnamon", "cloves", "bay leaves", "saffron", "dry fruits",
+    "almonds", "cashews", "raisins", "walnuts", "peanuts", "chana",
+    "rajma", "kidney beans", "chickpeas", "lentils", "soya chunks"
+  ],
+  "Drinks": [
+    "water bottle", "mineral water", "cold drink", "pepsi", "coca cola",
+    "sprite", "limca", "fanta", "thums up", "maaza", "frooti",
+    "slice", "real juice", "tropicana juice", "paper boat", "appy fizz",
+    "lassi", "chaas", "buttermilk", "coconut water", "green tea",
+    "black tea", "tea bags", "coffee", "nescafe", "bru", "horlicks",
+    "boost", "complan", "ensure", "red bull", "monster", "beer",
+    "wine", "soda water", "tonic water", "squash", "roohafza"
+  ],
+  "Household": [
+    "detergent", "surf excel", "ariel", "tide", "washing powder",
+    "vim bar", "vim liquid", "dish soap", "harpic", "toilet cleaner",
+    "floor cleaner", "phenyl", "colin", "glass cleaner", "lizol",
+    "broom", "mop", "bucket", "dustbin", "trash bags", "garbage bags",
+    "tissue paper", "toilet paper", "napkins", "air freshener",
+    "room freshener", "mosquito coil", "hit spray", "goodknight",
+    "all out", "mortein", "rat poison", "cockroach killer",
+    "cleaning cloth", "scrubber", "sponge", "steel wool",
+    "washing machine liquid", "fabric softener", "comfort",
+    "candles", "matchbox", "lighter", "aluminium foil", "cling wrap",
+    "zip lock bags", "rubber gloves", "brush"
+  ],
+  "Personal Care": [
+    "shampoo", "head and shoulders", "dove shampoo", "conditioner",
+    "soap", "lux soap", "dettol soap", "lifebuoy", "pears",
+    "face wash", "cleanser", "moisturizer", "sunscreen", "spf",
+    "toothpaste", "colgate", "pepsodent", "sensodyne", "toothbrush",
+    "mouthwash", "listerine", "deodorant", "deo", "axe", "dove deo",
+    "talcum powder", "body lotion", "body wash", "shower gel",
+    "hair oil", "parachute", "bajaj almond", "coconut oil for hair",
+    "hair color", "henna", "mehendi", "nail cutter", "razor",
+    "shaving cream", "gillette", "face mask", "lip balm", "kajal",
+    "lipstick", "foundation", "compact powder", "sanitary pads",
+    "whisper", "stayfree", "tampons", "cotton balls", "ear buds"
+  ],
+  "Medical": [
+    "paracetamol", "crocin", "dolo", "aspirin", "ibuprofen",
+    "combiflam", "disprin", "antacid", "digene", "eno",
+    "cough syrup", "benadryl", "honey tulsi", "vicks", "otrivin",
+    "nasal spray", "eye drops", "ear drops", "ointment",
+    "antiseptic", "dettol", "savlon", "bandage", "band aid",
+    "cotton", "crepe bandage", "thermometer", "bp monitor",
+    "glucometer", "insulin", "vitamin c", "vitamin d", "calcium",
+    "iron tablets", "multivitamin", "omega 3", "fish oil",
+    "probiotic", "protein powder", "whey protein", "face serum",
+    "prescription medicine", "tablet", "capsule", "syrup", "injection"
+  ],
+  "Bakery": [
+    "bread", "brown bread", "whole wheat bread", "pav", "bun",
+    "cake", "pastry", "muffin", "cupcake", "cookie", "brownie",
+    "croissant", "sandwich bread", "pizza base", "naan", "pita",
+    "bagel", "dinner roll", "toast bread", "rusk", "khari"
+  ]
+}
