@@ -58,93 +58,174 @@ from storage import (
     delete_receipt,
     list_receipts,
     get_available_months,
+    get_available_years,
     get_monthly_data,
+    get_yearly_data,
     record_user_correction,
     get_user_correction,
 )
 
 
 # ─── Chart Generation (Publication Quality) ──────────────────────────────────
-def generate_monthly_chart(month_key: Optional[str] = None) -> Optional[str]:
+def generate_spending_chart(timeframe: str = "Monthly", period_key: Optional[str] = None) -> Optional[str]:
     """
     Generate modern high-resolution spending charts:
-    Left: Category Breakdown Donut chart with center total callout.
-    Right: Horizontal Ranked Bar chart with precise amounts.
+    - Monthly: Donut (Category Share) + Horizontal Ranked Bar chart
+    - Weekly: Chronological Week-by-Week Velocity Bar chart + Category Donut
+    - Yearly: Month-by-Month Annual Velocity Bar chart + Category Donut
     """
-    data = get_monthly_data(month_key)
-    if not data or not data["category_totals"]:
+    tf = (timeframe or "Monthly").capitalize()
+    if tf == "Yearly":
+        data = get_yearly_data(period_key)
+    else:
+        data = get_monthly_data(period_key)
+
+    if not data or not data.get("category_totals"):
         return None
 
     curr = data.get("currency", "₹")
     os.makedirs(CHARTS_DIR, exist_ok=True)
-    chart_path = os.path.join(CHARTS_DIR, f"chart_{data['month']}.png")
+    suffix = str(data.get("month") or data.get("year") or "period").replace("/", "_")
+    chart_path = os.path.join(CHARTS_DIR, f"chart_{tf}_{suffix}.png")
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2), dpi=150)
     fig.patch.set_facecolor("#0F172A")
 
-    # ── Panel 1: Donut Chart ─────────────────────────────────────────────────
-    ax1 = axes[0]
-    ax1.set_facecolor("#0F172A")
-
     cats = list(data["category_totals"].keys())
-    # Exclude negative discounts from donut proportions
     amts = [max(0.0, data["category_totals"][c]) for c in cats]
     colors = [get_category_color(c) for c in cats]
 
-    wedges, texts = ax1.pie(
-        amts,
-        colors=colors,
-        startangle=140,
-        wedgeprops={"width": 0.48, "edgecolor": "#0F172A", "linewidth": 3}
-    )
+    if tf == "Weekly":
+        # ── Panel 1: Weekly Breakdown Bar Chart ──
+        ax1 = axes[0]
+        ax1.set_facecolor("#0F172A")
+        week_keys = [f"Week {i}" for i in range(1, 6)]
+        week_vals = [data.get("weekly", {}).get(wk, 0.0) for wk in week_keys]
 
-    # Center callout
-    ax1.text(0, 0.08, f"{curr}{data['grand_total']:,.2f}", ha="center", va="center",
-             fontsize=17, fontweight="bold", color="#F8FAFC")
-    ax1.text(0, -0.15, "TOTAL SPEND", ha="center", va="center",
-             fontsize=9, fontweight="medium", color="#94A3B8")
+        bars = ax1.bar(week_keys, week_vals, color="#3B82F6", edgecolor="none", width=0.55)
+        max_w = max(week_vals) if (week_vals and max(week_vals) > 0) else 100
+        for bar, val in zip(bars, week_vals):
+            if val > 0:
+                ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_w * 0.02,
+                         f"{curr}{val:,.0f}", ha="center", va="bottom", fontsize=9.5, fontweight="bold", color="#F8FAFC")
 
-    legend_labels = [f"{c} ({curr}{v:,.0f})" for c, v in zip(cats, amts)]
-    ax1.legend(wedges, legend_labels, loc="lower center", bbox_to_anchor=(0.5, -0.15),
-               ncol=2, fontsize=8.5, frameon=False, labelcolor="#E2E8F0")
-    ax1.set_title("Spending by Category", fontsize=13, fontweight="bold", pad=15, color="#F8FAFC")
+        ax1.set_title(f"Weekly Spend Velocity ({data.get('month', '')})", fontsize=13, fontweight="bold", pad=15, color="#F8FAFC")
+        ax1.set_ylabel(f"Outlay ({curr})", fontsize=10, color="#94A3B8")
+        ax1.tick_params(axis="x", labelsize=10, colors="#CBD5E1")
+        ax1.tick_params(axis="y", labelsize=9, colors="#94A3B8")
+        ax1.set_ylim(0, max_w * 1.25)
+        ax1.spines[["top", "right"]].set_visible(False)
+        ax1.spines["left"].set_color("#334155")
+        ax1.spines["bottom"].set_color("#334155")
+        ax1.grid(axis="y", color="#1E293B", linestyle="--", alpha=0.7)
 
-    # ── Panel 2: Ranked Bar Chart ────────────────────────────────────────────
-    ax2 = axes[1]
-    ax2.set_facecolor("#0F172A")
-
-    raw_amts = [data["category_totals"][c] for c in cats]
-    sorted_pairs = sorted(zip(raw_amts, cats, colors), key=lambda x: x[0])
-    s_amts, s_cats, s_colors = zip(*sorted_pairs)
-
-    y_pos = range(len(s_cats))
-    bars = ax2.barh(y_pos, s_amts, color=s_colors, height=0.6, edgecolor="none")
-
-    max_amt = max(s_amts) if s_amts else 100
-    for bar, amt in zip(bars, s_amts):
-        pct = (amt / data["grand_total"]) * 100 if data["grand_total"] > 0 else 0
-        ax2.text(
-            bar.get_width() + max_amt * 0.03,
-            bar.get_y() + bar.get_height() / 2,
-            f"{curr}{amt:,.2f} ({pct:.0f}%)",
-            va="center", ha="left", fontsize=9.5, color="#E2E8F0"
+        # ── Panel 2: Category Donut Chart ──
+        ax2 = axes[1]
+        ax2.set_facecolor("#0F172A")
+        wedges, texts = ax2.pie(
+            amts, colors=colors, startangle=140,
+            wedgeprops={"width": 0.48, "edgecolor": "#0F172A", "linewidth": 3}
         )
+        ax2.text(0, 0.08, f"{curr}{data['grand_total']:,.2f}", ha="center", va="center",
+                 fontsize=17, fontweight="bold", color="#F8FAFC")
+        ax2.text(0, -0.15, "TOTAL SPEND", ha="center", va="center",
+                 fontsize=9, fontweight="medium", color="#94A3B8")
+        legend_labels = [f"{c} ({curr}{v:,.0f})" for c, v in zip(cats, amts)]
+        ax2.legend(wedges, legend_labels, loc="lower center", bbox_to_anchor=(0.5, -0.15),
+                   ncol=2, fontsize=8.5, frameon=False, labelcolor="#E2E8F0")
+        ax2.set_title("Category Distribution", fontsize=13, fontweight="bold", pad=15, color="#F8FAFC")
 
-    ax2.set_yticks(y_pos)
-    ax2.set_yticklabels(s_cats, fontsize=10, color="#CBD5E1")
-    ax2.set_xlabel(f"Expenditure ({curr})", fontsize=10, color="#94A3B8")
-    ax2.set_title("Ranked Category Distribution", fontsize=13, fontweight="bold", pad=15, color="#F8FAFC")
-    ax2.spines[["top", "right", "left"]].set_visible(False)
-    ax2.spines["bottom"].set_color("#334155")
-    ax2.tick_params(axis="x", labelsize=9, colors="#94A3B8")
-    ax2.tick_params(axis="y", colors="#CBD5E1")
-    ax2.set_xlim(0, max_amt * 1.35)
-    ax2.grid(axis="x", color="#1E293B", linestyle="--", alpha=0.7)
+    elif tf == "Yearly":
+        # ── Panel 1: Annual Monthly Trend Bar Chart ──
+        ax1 = axes[0]
+        ax1.set_facecolor("#0F172A")
+        trend = data.get("monthly_trend", {})
+        sorted_m = sorted(trend.keys())
+        m_labels = [m.split("-")[1] if "-" in m else m for m in sorted_m]
+        m_vals = [trend[m] for m in sorted_m]
+
+        bars = ax1.bar(m_labels or ["No data"], m_vals or [0], color="#10B981", edgecolor="none", width=0.55)
+        max_m = max(m_vals) if (m_vals and max(m_vals) > 0) else 100
+        for bar, val in zip(bars, m_vals):
+            if val > 0:
+                ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_m * 0.02,
+                         f"{curr}{val:,.0f}", ha="center", va="bottom", fontsize=9.5, fontweight="bold", color="#F8FAFC")
+
+        ax1.set_title(f"Annual Monthly Spend ({data.get('year', '')})", fontsize=13, fontweight="bold", pad=15, color="#F8FAFC")
+        ax1.set_ylabel(f"Outlay ({curr})", fontsize=10, color="#94A3B8")
+        ax1.tick_params(axis="x", labelsize=10, colors="#CBD5E1")
+        ax1.tick_params(axis="y", labelsize=9, colors="#94A3B8")
+        ax1.set_ylim(0, max_m * 1.25)
+        ax1.spines[["top", "right"]].set_visible(False)
+        ax1.spines["left"].set_color("#334155")
+        ax1.spines["bottom"].set_color("#334155")
+        ax1.grid(axis="y", color="#1E293B", linestyle="--", alpha=0.7)
+
+        # ── Panel 2: Annual Category Share Donut ──
+        ax2 = axes[1]
+        ax2.set_facecolor("#0F172A")
+        wedges, texts = ax2.pie(
+            amts, colors=colors, startangle=140,
+            wedgeprops={"width": 0.48, "edgecolor": "#0F172A", "linewidth": 3}
+        )
+        ax2.text(0, 0.08, f"{curr}{data['grand_total']:,.2f}", ha="center", va="center",
+                 fontsize=17, fontweight="bold", color="#F8FAFC")
+        ax2.text(0, -0.15, "ANNUAL TOTAL", ha="center", va="center",
+                 fontsize=9, fontweight="medium", color="#94A3B8")
+        legend_labels = [f"{c} ({curr}{v:,.0f})" for c, v in zip(cats, amts)]
+        ax2.legend(wedges, legend_labels, loc="lower center", bbox_to_anchor=(0.5, -0.15),
+                   ncol=2, fontsize=8.5, frameon=False, labelcolor="#E2E8F0")
+        ax2.set_title("Full-Year Category Allocation", fontsize=13, fontweight="bold", pad=15, color="#F8FAFC")
+
+    else:
+        # ── Monthly (Default): Donut + Ranked Bars ──
+        ax1 = axes[0]
+        ax1.set_facecolor("#0F172A")
+        wedges, texts = ax1.pie(
+            amts, colors=colors, startangle=140,
+            wedgeprops={"width": 0.48, "edgecolor": "#0F172A", "linewidth": 3}
+        )
+        ax1.text(0, 0.08, f"{curr}{data['grand_total']:,.2f}", ha="center", va="center",
+                 fontsize=17, fontweight="bold", color="#F8FAFC")
+        ax1.text(0, -0.15, "TOTAL SPEND", ha="center", va="center",
+                 fontsize=9, fontweight="medium", color="#94A3B8")
+        legend_labels = [f"{c} ({curr}{v:,.0f})" for c, v in zip(cats, amts)]
+        ax1.legend(wedges, legend_labels, loc="lower center", bbox_to_anchor=(0.5, -0.15),
+                   ncol=2, fontsize=8.5, frameon=False, labelcolor="#E2E8F0")
+        ax1.set_title("Spending by Category", fontsize=13, fontweight="bold", pad=15, color="#F8FAFC")
+
+        ax2 = axes[1]
+        ax2.set_facecolor("#0F172A")
+        raw_amts = [data["category_totals"][c] for c in cats]
+        sorted_pairs = sorted(zip(raw_amts, cats, colors), key=lambda x: x[0])
+        s_amts, s_cats, s_colors = zip(*sorted_pairs)
+        y_pos = range(len(s_cats))
+        bars = ax2.barh(y_pos, s_amts, color=s_colors, height=0.6, edgecolor="none")
+        max_amt = max(s_amts) if s_amts else 100
+        for bar, amt in zip(bars, s_amts):
+            pct = (amt / data["grand_total"]) * 100 if data["grand_total"] > 0 else 0
+            ax2.text(bar.get_width() + max_amt * 0.03, bar.get_y() + bar.get_height() / 2,
+                     f"{curr}{amt:,.2f} ({pct:.0f}%)", va="center", ha="left", fontsize=9.5, color="#E2E8F0")
+        ax2.set_yticks(y_pos)
+        ax2.set_yticklabels(s_cats, fontsize=10, color="#CBD5E1")
+        ax2.set_xlabel(f"Expenditure ({curr})", fontsize=10, color="#94A3B8")
+        ax2.set_title("Ranked Category Distribution", fontsize=13, fontweight="bold", pad=15, color="#F8FAFC")
+        ax2.spines[["top", "right", "left"]].set_visible(False)
+        ax2.spines["bottom"].set_color("#334155")
+        ax2.tick_params(axis="x", labelsize=9, colors="#94A3B8")
+        ax2.tick_params(axis="y", colors="#CBD5E1")
+        ax2.set_xlim(0, max_amt * 1.35)
+        ax2.grid(axis="x", color="#1E293B", linestyle="--", alpha=0.7)
 
     plt.tight_layout(pad=2.5)
     plt.savefig(chart_path, dpi=150, bbox_inches="tight", facecolor="#0F172A")
     plt.close()
     return chart_path
+
+
+def generate_monthly_chart(month_key: Optional[str] = None) -> Optional[str]:
+    """Backward compatible wrapper around generate_spending_chart."""
+    return generate_spending_chart("Monthly", month_key)
 
 
 DEFAULT_CATEGORY_BUDGETS: Dict[str, float] = {
@@ -257,12 +338,20 @@ def generate_insights(data: Optional[dict]) -> List[str]:
     elif warning:
         insights.append(f"Budget Watch: {warning[0]['message']}.")
 
-    # 0.5. Month-End Velocity Forecast
-    forecast = calculate_month_end_forecast(data)
-    insights.append(
-        f"Month-End Velocity Forecast: Paced at {curr}{forecast['daily_velocity']:,.2f}/day through Day {forecast['day_progress']}. "
-        f"Projected month-end outlay is ~{curr}{forecast['projected_total']:,.2f} ({forecast['days_in_month']}-day projection)."
-    )
+    # 0.5. Velocity Forecast / Run-Rate
+    if "year" in data and "month" not in data:
+        months_active = len(data.get("monthly_trend", {})) or 1
+        monthly_avg = grand / max(months_active, 1)
+        insights.append(
+            f"Annual Run-Rate & Velocity: Outlay across {months_active} active month(s) averages {curr}{monthly_avg:,.2f}/month. "
+            f"Projected 12-month annual baseline is ~{curr}{(monthly_avg * 12):,.2f}."
+        )
+    else:
+        forecast = calculate_month_end_forecast(data)
+        insights.append(
+            f"Month-End Velocity Forecast: Paced at {curr}{forecast['daily_velocity']:,.2f}/day through Day {forecast['day_progress']}. "
+            f"Projected month-end outlay is ~{curr}{forecast['projected_total']:,.2f} ({forecast['days_in_month']}-day projection)."
+        )
 
 
     # 1. Executive Health Score & Discipline Index
@@ -378,10 +467,16 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
     if not query or not query.strip():
         return "Please enter a question about your spending or budget."
 
-    data = get_monthly_data(month_key)
-    if not data or not data.get("receipts"):
-        return "No transactions are recorded for this month yet. Scan receipts in Tab 1 to activate the AI Financial Advisor."
+    if month_key and len(str(month_key).strip()) == 4 and str(month_key).strip().isdigit():
+        from storage import get_yearly_data
+        data = get_yearly_data(month_key)
+    else:
+        data = get_monthly_data(month_key)
 
+    if not data or not data.get("receipts"):
+        return "No transactions are recorded for this period yet. Scan receipts in Tab 1 to activate the AI Financial Advisor."
+
+    period_lbl = data.get("month") or data.get("year", "Selected Period")
     q = query.lower().strip()
     curr = data.get("currency", "₹")
     grand = float(data.get("grand_total", 0.0))
@@ -407,7 +502,7 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
     if any(w in q for w in ["biggest", "most expensive", "highest", "costliest", "peak", "top purchase"]):
         top_3 = all_items[:3]
         lines = [
-            f"### 🏷️ Top Single-Item Purchases in {data['month']}",
+            f"### 🏷️ Top Single-Item Purchases in {period_lbl}",
             f"Your peak expense was **{top_3[0]['name']}** for **{curr}{top_3[0]['amount']:,.2f}** at *{top_3[0]['store']}* ({top_3[0]['date']}).\n",
             "**Top items ranked by expenditure:**"
         ]
@@ -419,14 +514,14 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
     # 2. Detailed category breakdown
     if any(w in q for w in ["break down", "breakdown", "category", "categories", "where did my money go"]):
         lines = [
-            f"### 📊 Detailed Category Breakdown for {data['month']}",
+            f"### 📊 Detailed Category Breakdown for {period_lbl}",
             f"Total Spend: **{curr}{grand:,.2f}** across **{len(receipts)} trips** and **{len(all_items)} items**.\n",
             "| Category | Total Spent | Share | Item Count |",
             "| :--- | :--- | :--- | :--- |"
         ]
         for cat, amt in sorted(cat_totals.items(), key=lambda x: x[1], reverse=True):
             pct = (amt / max(grand, 1.0)) * 100
-            cnt = data["category_counts"].get(cat, 0)
+            cnt = data.get("category_counts", {}).get(cat, 0)
             lines.append(f"| **{cat}** | {curr}{amt:,.2f} | {pct:.1f}% | {cnt} |")
         return "\n".join(lines)
 
@@ -437,8 +532,8 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
             cat_pct = (cat_amt / max(grand, 1.0)) * 100
             cat_items = [it for it in all_items if it["category"].lower() == cat.lower()]
             lines = [
-                f"### 🛒 Spending on {cat} in {data['month']}",
-                f"You spent **{curr}{cat_amt:,.2f}** on **{cat}**, which accounts for **{cat_pct:.1f}%** of your total monthly expenditure across **{len(cat_items)} items**.\n",
+                f"### 🛒 Spending on {cat} in {period_lbl}",
+                f"You spent **{curr}{cat_amt:,.2f}** on **{cat}**, which accounts for **{cat_pct:.1f}%** of your total expenditure across **{len(cat_items)} items**.\n",
                 "**Items in this category:**"
             ]
             for it in cat_items:
@@ -448,42 +543,44 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
     # 4. Store / Merchant breakdown
     if any(w in q for w in ["store", "merchant", "vendor", "where do i shop", "supermarket", "shops"]):
         lines = [
-            f"### 🏪 Merchant Breakdown for {data['month']}",
-            f"You shopped at **{len(store_totals)} unique stores** this month:\n"
+            f"### 🏪 Merchant Breakdown for {period_lbl}",
+            f"You shopped at **{len(store_totals)} unique stores** during this period:\n"
         ]
         for store, amt in sorted(store_totals.items(), key=lambda x: x[1], reverse=True):
             pct = (amt / max(grand, 1.0)) * 100
-            visits = data["store_counts"].get(store, 1)
+            visits = data.get("store_counts", {}).get(store, 1)
             lines.append(f"• **{store}**: **{curr}{amt:,.2f}** ({pct:.1f}% of total) across **{visits} visit{'s' if visits > 1 else ''}** (Avg: {curr}{amt/visits:,.2f}/trip)")
         return "\n\n".join(lines)
 
     # 5. Budget / Savings Advice
     if any(w in q for w in ["save", "saving", "cut", "reduce", "budget", "plan", "advice", "tips"]):
+        top_name = all_items[0]['name'] if all_items else "primary staples"
+        top_amt = all_items[0]['amount'] if all_items else 0.0
         lines = [
-            f"### 🎯 Personalized Budget & Savings Plan ({data['month']})",
+            f"### 🎯 Personalized Budget & Savings Plan ({period_lbl})",
             f"Based on your actual purchasing patterns totaling **{curr}{grand:,.2f}**, here are 3 high-impact strategies:\n",
-            f"1. **Bulk Pantry Arbitrage**: Your highest individual purchase was *{all_items[0]['name']}* ({curr}{all_items[0]['amount']:,.2f}). Consolidating grains, oils, and non-perishables into 5kg/5L packs typically captures a **12–18% recurring price discount**.",
-            f"2. **Store Optimization**: You shopped across {len(store_totals)} stores. Prioritizing primary supermarkets for bulk staples and reserving specialty stores exclusively for items unavailable elsewhere could save up to **{curr}{grand*0.12:,.2f}/month**.",
-            f"3. **Zero Waste Batching**: You averaged **{curr}{data['avg_per_receipt']:,.2f}** per shopping trip. Combining multiple weekly trips into planned bi-weekly runs reduces impulse add-on purchases by an estimated **8–10%**."
+            f"1. **Bulk Pantry Arbitrage**: Your highest individual purchase was *{top_name}* ({curr}{top_amt:,.2f}). Consolidating staples into bulk packs typically captures a **12–18% recurring price discount**.",
+            f"2. **Store Optimization**: You shopped across {len(store_totals)} stores. Prioritizing primary supermarkets for bulk goods and reserving specialty stores exclusively for niche items could save up to **{curr}{grand*0.12:,.2f}**.",
+            f"3. **Zero Waste Batching**: You averaged **{curr}{data.get('avg_per_receipt', 0.0):,.2f}** per shopping trip. Combining multiple weekly trips into planned bi-weekly runs reduces impulse add-on purchases by an estimated **8–10%**."
         ]
         return "\n\n".join(lines)
 
     # 6. Projection / Run-rate
     if any(w in q for w in ["project", "forecast", "run rate", "end of month", "pace", "spend by end"]):
-        latest_date_str = max(r.get("date", "2026-10-18") for r in receipts)
+        latest_date_str = max((r.get("date", "2026-10-18") for r in receipts), default="2026-10-18")
         day = int(latest_date_str.split("-")[2][:2]) if "-" in latest_date_str else 18
         projected = (grand / max(day, 1)) * 30
         return (
-            f"### 📈 Month-End Projection for {data['month']}\n\n"
+            f"### 📈 Spending Velocity Projection for {period_lbl}\n\n"
             f"• **Current Total:** {curr}{grand:,.2f} through Day {day}\n"
             f"• **Daily Velocity:** {curr}{grand/day:,.2f} / day\n"
             f"• **Projected Month-End Spend:** **~{curr}{projected:,.2f}** (assuming constant velocity)\n\n"
-            f"*Tip: Keep track of mid-month discretionary spending to maintain your target monthly budget.*"
+            f"*Tip: Keep track of mid-month discretionary spending to maintain your target budget.*"
         )
 
     # Fallback: Comprehensive AI Financial Advisory Brief
     return (
-        f"### 💡 AI Financial Advisor Brief ({data['month']})\n\n"
+        f"### 💡 AI Financial Advisor Brief ({period_lbl})\n\n"
         f"• **Total Recorded Spend:** {curr}{grand:,.2f} across {len(receipts)} receipts\n"
         f"• **Dominant Category:** {data.get('top_category', 'Food')} ({curr}{cat_totals.get(data.get('top_category', 'Food'), 0.0):,.2f})\n"
         f"• **Top Merchant:** {max(store_totals, key=store_totals.get) if store_totals else '—'} ({curr}{max(store_totals.values()) if store_totals else 0:,.2f})\n"
@@ -498,8 +595,15 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
 
 # ─── Data Export ─────────────────────────────────────────────────────────────
 def export_to_csv(month_key: Optional[str] = None) -> Optional[str]:
-    """Export itemized transactions to CSV."""
-    data = get_monthly_data(month_key)
+    """Export itemized transactions to CSV for selected month or year."""
+    if month_key and len(str(month_key).strip()) == 4 and str(month_key).strip().isdigit():
+        from storage import get_yearly_data
+        data = get_yearly_data(month_key)
+        period_lbl = str(month_key)
+    else:
+        data = get_monthly_data(month_key)
+        period_lbl = data.get("month", "data") if data else "data"
+
     if not data or not data.get("receipts"):
         return None
 
@@ -522,20 +626,27 @@ def export_to_csv(month_key: Optional[str] = None) -> Optional[str]:
             })
 
     os.makedirs(CHARTS_DIR, exist_ok=True)
-    csv_path = os.path.join(CHARTS_DIR, f"expenses_{data['month']}.csv")
+    csv_path = os.path.join(CHARTS_DIR, f"expenses_{period_lbl}.csv")
     df = pd.DataFrame(rows)
     df.to_csv(csv_path, index=False)
     return csv_path
 
 
 def export_to_json(month_key: Optional[str] = None) -> Optional[str]:
-    """Export full structured monthly dataset to JSON."""
-    data = get_monthly_data(month_key)
+    """Export full structured monthly or yearly dataset to JSON."""
+    if month_key and len(str(month_key).strip()) == 4 and str(month_key).strip().isdigit():
+        from storage import get_yearly_data
+        data = get_yearly_data(month_key)
+        period_lbl = str(month_key)
+    else:
+        data = get_monthly_data(month_key)
+        period_lbl = data.get("month", "data") if data else "data"
+
     if not data:
         return None
 
     os.makedirs(CHARTS_DIR, exist_ok=True)
-    json_path = os.path.join(CHARTS_DIR, f"expenses_{data['month']}.json")
+    json_path = os.path.join(CHARTS_DIR, f"expenses_{period_lbl}.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     return json_path

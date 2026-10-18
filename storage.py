@@ -259,8 +259,12 @@ def list_receipts(month_key: Optional[str] = None, search_query: Optional[str] =
         conditions: List[str] = []
 
         if month_key:
-            conditions.append("month = ?")
-            params.append(month_key)
+            if len(str(month_key).strip()) == 4 and str(month_key).strip().isdigit():
+                conditions.append("substr(month, 1, 4) = ?")
+                params.append(str(month_key).strip())
+            else:
+                conditions.append("month = ?")
+                params.append(month_key)
 
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
@@ -296,6 +300,97 @@ def get_available_months() -> List[str]:
         cur = conn.cursor()
         cur.execute("SELECT DISTINCT month FROM receipts ORDER BY month DESC")
         return [row[0] for row in cur.fetchall()]
+
+
+def get_available_years() -> List[str]:
+    """Return distinct statement years sorted descending (newest first)."""
+    init_db()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT substr(month, 1, 4) FROM receipts ORDER BY 1 DESC")
+        years = [row[0] for row in cur.fetchall() if row[0]]
+        return years or [datetime.now().strftime("%Y")]
+
+
+def get_yearly_data(year_key: Optional[str] = None) -> Optional[dict]:
+    """Compute annual aggregates across all months for a given year."""
+    init_db()
+    years = get_available_years()
+    if not years:
+        return None
+    target_year = year_key if (year_key and year_key in years) else years[0]
+
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM receipts WHERE substr(month, 1, 4) = ? ORDER BY date ASC", (target_year,))
+        receipt_rows = cur.fetchall()
+        if not receipt_rows:
+            return None
+        receipts = []
+        for r_row in receipt_rows:
+            r = dict(r_row)
+            cur.execute("SELECT * FROM line_items WHERE receipt_id = ?", (r["id"],))
+            r["items"] = [dict(it) for it in cur.fetchall()]
+            receipts.append(r)
+
+    category_totals = defaultdict(float)
+    category_counts = defaultdict(int)
+    store_totals = defaultdict(float)
+    store_counts = defaultdict(int)
+    monthly_trend = defaultdict(float)
+    currencies = []
+
+    for r in receipts:
+        r_tot = float(r.get("total", 0.0))
+        m = r.get("month", f"{target_year}-01")
+        monthly_trend[m] += r_tot
+        store = r.get("store", "Unknown Store")
+        store_totals[store] += r_tot
+        store_counts[store] += 1
+        currencies.append(r.get("currency", "₹"))
+        for item in r.get("items", []):
+            cat = item.get("category", "Other")
+            amt = float(item.get("amount", 0.0))
+            category_totals[cat] += amt
+            category_counts[cat] += 1
+
+    dominant_curr = Counter(currencies).most_common(1)[0][0] if currencies else "₹"
+    grand_total = sum(float(r.get("total", 0.0)) for r in receipts)
+    avg_per_receipt = grand_total / len(receipts) if receipts else 0.0
+    top_cat = max(category_totals, key=category_totals.get) if category_totals else "—"
+
+    # Prior year comparison if available
+    all_years_asc = sorted(years)
+    yoy_change_pct = 0.0
+    prev_year = None
+    if target_year in all_years_asc:
+        idx = all_years_asc.index(target_year)
+        if idx > 0:
+            prev_year = all_years_asc[idx - 1]
+            with get_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT SUM(total) FROM receipts WHERE substr(month, 1, 4) = ?", (prev_year,))
+                row = cur.fetchone()
+                prev_total = float(row[0]) if (row and row[0] is not None) else 0.0
+                if prev_total > 0:
+                    yoy_change_pct = round(((grand_total - prev_total) / prev_total) * 100, 1)
+
+    return {
+        "year": target_year,
+        "receipts": receipts,
+        "receipt_count": len(receipts),
+        "grand_total": round(grand_total, 2),
+        "avg_per_receipt": round(avg_per_receipt, 2),
+        "currency": dominant_curr,
+        "category_totals": dict(category_totals),
+        "category_counts": dict(category_counts),
+        "store_totals": dict(store_totals),
+        "store_counts": dict(store_counts),
+        "monthly_trend": dict(monthly_trend),
+        "top_category": top_cat,
+        "yoy_change_pct": yoy_change_pct,
+        "prev_year": prev_year,
+    }
 
 
 def get_monthly_data(month_key: Optional[str] = None) -> Optional[dict]:

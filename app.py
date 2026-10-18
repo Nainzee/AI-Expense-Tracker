@@ -30,6 +30,7 @@ from monthly_summary import (
     save_receipt,
     get_monthly_data,
     get_available_months,
+    generate_spending_chart,
     generate_monthly_chart,
     generate_insights,
     query_financial_advisor,
@@ -42,6 +43,7 @@ from monthly_summary import (
 )
 from statement_matcher import parse_bank_statement_csv, match_receipts_to_statement
 import storage
+from storage import get_available_years, get_yearly_data
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -295,10 +297,67 @@ def make_kpi_card(title: str, value: str, subtext: str, trend_class: str = "tren
     """
 
 
-def load_monthly_dashboard(month_key: Optional[str] = None):
-    """Generate summary metrics, MoM card, charts, and insights."""
+def load_analytics_dashboard(timeframe: str = "Monthly", period_key: Optional[str] = None):
+    """Generate summary metrics, KPI cards, charts, and insights across Monthly, Weekly, or Yearly horizon."""
+    if timeframe == "Yearly":
+        years = get_available_years()
+        target_period = period_key if (period_key and period_key in years) else (years[0] if years else None)
+        if not target_period:
+            empty_card = make_kpi_card("Annual Outlay", "₹0.00", "No data recorded")
+            empty_count = make_kpi_card("Audited Receipts", "0", "0 transactions")
+            empty_avg = make_kpi_card("Avg Ticket", "₹0.00", "Per trip")
+            empty_top = make_kpi_card("Primary Driver", "—", "No records")
+            return empty_card, empty_count, empty_avg, empty_top, None, "No annual records found. Scan receipts in Tab 1 to populate analytics."
+
+        data = get_yearly_data(target_period)
+        if not data or not data.get("receipts"):
+            c = "₹"
+            empty_card = make_kpi_card("Annual Outlay", f"{c}0.00", f"No records for {target_period}")
+            empty_count = make_kpi_card("Audited Receipts", "0", "0 transactions")
+            empty_avg = make_kpi_card("Avg Ticket", f"{c}0.00", "Per trip")
+            empty_top = make_kpi_card("Primary Driver", "—", "No records")
+            return empty_card, empty_count, empty_avg, empty_top, None, f"No transactions recorded for {target_period}."
+
+        curr = data.get("currency", "₹")
+        yoy_val = data.get("yoy_change_pct", 0.0)
+        yoy_class = "trend-down" if yoy_val <= 0 else "trend-up"
+        yoy_sub = f"{'📈 +' if yoy_val > 0 else '📉 '}{yoy_val:.1f}% vs previous year" if data.get("prev_year") else "Annual baseline period"
+
+        card_total = make_kpi_card("Annual Outlay", f"{curr}{data['grand_total']:,.2f}", yoy_sub, yoy_class)
+        card_trips = make_kpi_card("Audited Receipts", f"{data['receipt_count']}", f"Across {len(data.get('store_totals', {}))} distinct stores", "trend-neutral")
+        card_avg = make_kpi_card("Avg Ticket Size", f"{curr}{data['avg_per_receipt']:,.2f}", "Average spend per shopping trip", "trend-neutral")
+
+        top_cat = data.get("top_category", "None")
+        top_spend = data.get("category_totals", {}).get(top_cat, 0.0)
+        top_pct = (top_spend / max(data["grand_total"], 1.0)) * 100
+        card_top = make_kpi_card("Primary Driver", f"{top_cat}", f"{curr}{top_spend:,.2f} ({top_pct:.0f}% of annual spend)", "trend-neutral")
+
+        insights_list = generate_insights(data)
+        formatted_insights = []
+        for item in insights_list:
+            if "Budget Alert:" in item or "Budget Watch:" in item:
+                formatted_insights.append(f"<div class='insight-card alert'>🚨 **Budget Warning**: {item.split(':', 1)[1].strip()}</div>")
+            elif "Financial Health Score:" in item:
+                formatted_insights.append(f"<div class='insight-card health'>🛡️ **Health Index**: {item.split(':', 1)[1].strip()}</div>")
+            elif "Primary Expense Driver:" in item:
+                formatted_insights.append(f"<div class='insight-card'>🛒 **Primary Outlay Driver**: {item.split(':', 1)[1].strip()}</div>")
+            elif "Annual Run-Rate & Velocity:" in item:
+                formatted_insights.append(f"<div class='insight-card forecast'>📈 **Annual Run-Rate**: {item.split(':', 1)[1].strip()}</div>")
+            elif "Month-End Velocity Forecast:" in item:
+                formatted_insights.append(f"<div class='insight-card forecast'>📈 **Month-End Velocity**: {item.split(':', 1)[1].strip()}</div>")
+            elif ":" in item:
+                k, v = item.split(":", 1)
+                formatted_insights.append(f"<div class='insight-card'>💡 **{k.strip()}**: {v.strip()}</div>")
+            else:
+                formatted_insights.append(f"<div class='insight-card'>• {item}</div>")
+
+        insights_markdown = "\n\n".join(formatted_insights)
+        chart_img = generate_spending_chart("Yearly", target_period)
+        return card_total, card_trips, card_avg, card_top, chart_img, insights_markdown
+
+    # Monthly or Weekly
     months = get_available_months()
-    target_month = month_key
+    target_month = period_key
     if not target_month or target_month == "No data yet":
         target_month = months[0] if months else None
 
@@ -306,8 +365,8 @@ def load_monthly_dashboard(month_key: Optional[str] = None):
         empty_card = make_kpi_card("Total Outlay", "₹0.00", "No data recorded")
         empty_count = make_kpi_card("Audited Receipts", "0", "0 transactions")
         empty_avg = make_kpi_card("Avg Ticket", "₹0.00", "Per trip")
-        empty_top = make_kpi_card("Top Category", "—", "No records")
-        return empty_card, empty_count, empty_avg, empty_top, None, "No transaction records available. Scan receipts in Tab 1 to populate analytics.", []
+        empty_top = make_kpi_card("Primary Driver", "—", "No records")
+        return empty_card, empty_count, empty_avg, empty_top, None, "No transaction records available. Scan receipts in Tab 1 to populate analytics."
 
     data = get_monthly_data(target_month)
     if not data or not data.get("receipts"):
@@ -315,15 +374,19 @@ def load_monthly_dashboard(month_key: Optional[str] = None):
         empty_card = make_kpi_card("Total Outlay", f"{c}0.00", f"No records for {target_month}")
         empty_count = make_kpi_card("Audited Receipts", "0", "0 transactions")
         empty_avg = make_kpi_card("Avg Ticket", f"{c}0.00", "Per trip")
-        empty_top = make_kpi_card("Top Category", "—", "No records")
-        return empty_card, empty_count, empty_avg, empty_top, None, f"No transactions recorded for {target_month}.", []
+        empty_top = make_kpi_card("Primary Driver", "—", "No records")
+        return empty_card, empty_count, empty_avg, empty_top, None, f"No transactions recorded for {target_month}."
 
     curr = data.get("currency", "₹")
-    mom_val = data.get("mom_change_pct", 0.0)
-    mom_class = "trend-down" if mom_val <= 0 else "trend-up"
-    mom_sub = f"{'📈 +' if mom_val > 0 else '📉 '}{mom_val:.1f}% vs previous month" if data.get("prev_month") else "Baseline benchmark period"
+    if timeframe == "Weekly":
+        subtext = f"Weekly velocity view for {target_month}"
+        trend_class = "trend-neutral"
+    else:
+        mom_val = data.get("mom_change_pct", 0.0)
+        trend_class = "trend-down" if mom_val <= 0 else "trend-up"
+        subtext = f"{'📈 +' if mom_val > 0 else '📉 '}{mom_val:.1f}% vs previous month" if data.get("prev_month") else "Baseline benchmark period"
 
-    card_total = make_kpi_card("Total Outlay", f"{curr}{data['grand_total']:,.2f}", mom_sub, mom_class)
+    card_total = make_kpi_card("Total Outlay", f"{curr}{data['grand_total']:,.2f}", subtext, trend_class)
     card_trips = make_kpi_card("Audited Receipts", f"{data['receipt_count']}", f"Across {len(data.get('store_totals', {}))} distinct stores", "trend-neutral")
     card_avg = make_kpi_card("Avg Ticket Size", f"{curr}{data['avg_per_receipt']:,.2f}", "Average spend per shopping trip", "trend-neutral")
 
@@ -350,42 +413,51 @@ def load_monthly_dashboard(month_key: Optional[str] = None):
             formatted_insights.append(f"<div class='insight-card'>• {item}</div>")
 
     insights_markdown = "\n\n".join(formatted_insights)
+    chart_img = generate_spending_chart(timeframe, target_month)
+    return card_total, card_trips, card_avg, card_top, chart_img, insights_markdown
 
-    # In-memory high-res chart
-    chart_img = generate_monthly_chart(target_month)
 
-    # Roster
-    receipts_roster = []
-    for r in data.get("receipts", []):
-        receipts_roster.append([
-            r.get("id", ""),
-            r.get("date", ""),
-            r.get("store", ""),
-            f"{curr}{r.get('total', 0.0):,.2f}",
-            len(r.get("items", []))
-        ])
+def load_monthly_dashboard(month_key: Optional[str] = None):
+    """Backwards-compatible bridge returning 7 elements."""
+    res = load_analytics_dashboard("Monthly", month_key)
+    return res[0], res[1], res[2], res[3], res[4], res[5], []
 
-    return card_total, card_trips, card_avg, card_top, chart_img, insights_markdown, receipts_roster
+
+def refresh_period_choices(timeframe: str = "Monthly"):
+    """Refresh period dropdown choices according to active timeframe."""
+    if timeframe == "Yearly":
+        years = get_available_years()
+        if not years:
+            return gr.Dropdown(choices=["No data yet"], value=None, label="Statement Year")
+        return gr.Dropdown(choices=years, value=years[0], label="Statement Year")
+    else:
+        months = get_available_months()
+        if not months:
+            return gr.Dropdown(choices=["No data yet"], value=None, label="Statement Month")
+        return gr.Dropdown(choices=months, value=months[0], label="Statement Month")
 
 
 def refresh_month_choices():
     """Refresh month choices dropdown."""
-    months = get_available_months()
-    if not months:
-        return gr.Dropdown(choices=["No data yet"], value=None)
-    return gr.Dropdown(choices=months, value=months[0])
+    return refresh_period_choices("Monthly")
 
 
-def export_csv_action(month_key: str):
-    if not month_key:
-        return None
-    return export_to_csv(month_key)
+def export_csv_action(period_key: str):
+    if not period_key or period_key == "No data yet":
+        return gr.File(label="Download Exported File", visible=False)
+    csv_file = export_to_csv(period_key)
+    if csv_file and os.path.exists(csv_file):
+        return gr.File(value=csv_file, label=f"📥 Download Itemized CSV ({period_key})", visible=True)
+    return gr.File(label="Download Exported File", visible=False)
 
 
-def export_json_action(month_key: str):
-    if not month_key:
-        return None
-    return export_to_json(month_key)
+def export_json_action(period_key: str):
+    if not period_key or period_key == "No data yet":
+        return gr.File(label="Download Exported File", visible=False)
+    json_file = export_to_json(period_key)
+    if json_file and os.path.exists(json_file):
+        return gr.File(value=json_file, label=f"📥 Download Dataset JSON ({period_key})", visible=True)
+    return gr.File(label="Download Exported File", visible=False)
 
 
 # ─── Tab 3: Bank Statement Reconciliation ────────────────────────────────────
@@ -908,12 +980,18 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
         # ── TAB 2: SPENDING ANALYTICS & INSIGHTS ────────────────────────────
         init_months = get_available_months()
         init_month = init_months[0] if init_months else None
-        init_total, init_trips, init_avg, init_top, init_chart, init_insights, init_roster = load_monthly_dashboard(init_month)
+        init_total, init_trips, init_avg, init_top, init_chart, init_insights = load_analytics_dashboard("Monthly", init_month)
 
         with gr.Tab("📊 Spending Analytics & AI Insights") as tab_spending_analytics:
             with gr.Row():
-                month_select = gr.Dropdown(
-                    label="Statement Month",
+                timeframe_radio = gr.Radio(
+                    label="📅 Time Horizon",
+                    choices=["Monthly", "Weekly", "Yearly"],
+                    value="Monthly",
+                    scale=2
+                )
+                period_select = gr.Dropdown(
+                    label="Statement Period",
                     choices=init_months or ["No data yet"],
                     value=init_month,
                     scale=3
@@ -932,27 +1010,20 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
             with gr.Row():
                 with gr.Column(scale=5):
                     gr.Markdown("### 📈 Visual Expense Distribution")
-                    chart_display = gr.Image(value=init_chart, label="Category Allocation", height=380)
+                    chart_display = gr.Image(value=init_chart, label="Dynamic Spending Analytics", height=400)
 
                 with gr.Column(scale=7):
                     gr.Markdown("### 💡 Financial Insights & Budget Alerts")
                     insights_display = gr.Markdown(init_insights)
 
-            gr.Markdown("### 📋 Monthly Receipts Roster")
-            monthly_receipts_table = gr.DataFrame(
-                headers=["Receipt ID", "Date", "Merchant", "Total Spend", "Items Count"],
-                value=init_roster,
-                interactive=False
-            )
-
-            file_download = gr.File(label="Download Exported File", visible=True)
+            file_download = gr.File(label="📥 Download Exported Dataset", visible=False)
 
             # Interactive AI Financial Advisor
             with gr.Accordion("🤖 Interactive AI Financial Advisor (Q&A)", open=True):
                 with gr.Row():
                     advisor_query_in = gr.Textbox(
                         label="Ask anything about your spending, budget pacing, or categories",
-                        placeholder="e.g. 'What was my biggest expense?', 'Break down my food spend', 'How can I save money this month?'",
+                        placeholder="e.g. 'What was my biggest expense?', 'Break down my food spend', 'How can I save money?'",
                         scale=4
                     )
                     ask_advisor_btn = gr.Button("💬 Ask Advisor", variant="primary", scale=1)
@@ -962,7 +1033,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                         ["What was my single most expensive purchase?"],
                         ["Break down my spending by category"],
                         ["Give me 3 specific recommendations to cut expenses"],
-                        ["What is my projected month-end spend at this rate?"]
+                        ["What is my projected velocity at this rate?"]
                     ],
                     inputs=[advisor_query_in]
                 )
@@ -971,46 +1042,57 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
 
                 ask_advisor_btn.click(
                     fn=query_financial_advisor,
-                    inputs=[advisor_query_in, month_select],
+                    inputs=[advisor_query_in, period_select],
                     outputs=[advisor_answer_box]
                 )
                 advisor_query_in.submit(
                     fn=query_financial_advisor,
-                    inputs=[advisor_query_in, month_select],
+                    inputs=[advisor_query_in, period_select],
                     outputs=[advisor_answer_box]
                 )
 
             # Tab event handlers
-            tab_spending_analytics.select(
-                fn=load_monthly_dashboard,
-                inputs=[month_select],
-                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
+            timeframe_radio.change(
+                fn=refresh_period_choices,
+                inputs=[timeframe_radio],
+                outputs=[period_select]
+            ).then(
+                fn=load_analytics_dashboard,
+                inputs=[timeframe_radio, period_select],
+                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display]
             )
 
-            month_select.change(
-                fn=load_monthly_dashboard,
-                inputs=[month_select],
-                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
+            period_select.change(
+                fn=load_analytics_dashboard,
+                inputs=[timeframe_radio, period_select],
+                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display]
+            )
+
+            tab_spending_analytics.select(
+                fn=load_analytics_dashboard,
+                inputs=[timeframe_radio, period_select],
+                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display]
             )
 
             refresh_analytics_btn.click(
-                fn=refresh_month_choices,
-                outputs=[month_select]
+                fn=refresh_period_choices,
+                inputs=[timeframe_radio],
+                outputs=[period_select]
             ).then(
-                fn=load_monthly_dashboard,
-                inputs=[month_select],
-                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
+                fn=load_analytics_dashboard,
+                inputs=[timeframe_radio, period_select],
+                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display]
             )
 
             export_csv_btn.click(
                 fn=export_csv_action,
-                inputs=[month_select],
+                inputs=[period_select],
                 outputs=[file_download]
             )
 
             export_json_btn.click(
                 fn=export_json_action,
-                inputs=[month_select],
+                inputs=[period_select],
                 outputs=[file_download]
             )
 
@@ -1037,7 +1119,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
 
             reconcile_btn.click(
                 fn=reconcile_statement_action,
-                inputs=[statement_file_in, month_select],
+                inputs=[statement_file_in, period_select],
                 outputs=[statement_recon_table, statement_recon_summary]
             )
 
@@ -1116,12 +1198,13 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
         inputs=[store_name_in, date_in, items_editor, total_in, currency_in, pay_method_in, notes_in, force_save_chk],
         outputs=[save_feedback]
     ).then(
-        fn=refresh_month_choices,
-        outputs=[month_select]
+        fn=refresh_period_choices,
+        inputs=[timeframe_radio],
+        outputs=[period_select]
     ).then(
-        fn=load_monthly_dashboard,
-        inputs=[month_select],
-        outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
+        fn=load_analytics_dashboard,
+        inputs=[timeframe_radio, period_select],
+        outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display]
     ).then(
         fn=search_and_list_receipts,
         inputs=[search_query_box],
@@ -1130,9 +1213,9 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
 
     # ── Automatic Page Load Initialization ───────────────────────────────────
     demo.load(
-        fn=load_monthly_dashboard,
-        inputs=[month_select],
-        outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
+        fn=load_analytics_dashboard,
+        inputs=[timeframe_radio, period_select],
+        outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display]
     )
 
 # ─── Entry Point ─────────────────────────────────────────────────────────────
