@@ -416,12 +416,32 @@ def get_user_correction(item_text: str) -> Optional[str]:
         if row:
             return row[0]
 
-        # 2. Fuzzy match across known user corrections
+        # 2. Match when the known user-corrected phrase is a complete subphrase inside the query
         cur.execute("SELECT normalized_text, category FROM user_corrections ORDER BY id DESC")
         corrections = cur.fetchall()
         for corr_norm, cat in corrections:
-            # Word-level overlap or containment
-            if len(corr_norm) >= 4 and (corr_norm in norm or norm in corr_norm):
+            # e.g., if corr_norm is "basmati rice", it matches "organic basmati rice 5kg"
+            if len(corr_norm) >= 4 and f" {corr_norm} " in f" {norm} ":
                 return cat
 
     return None
+
+
+def get_all_user_corrections() -> List[Tuple[str, str]]:
+    """Retrieve all user corrections as (normalized_text, category) tuples."""
+    init_db()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT normalized_text, category FROM user_corrections ORDER BY id ASC")
+        return cur.fetchall()
+
+
+def count_user_corrections() -> int:
+    """Return total number of saved user corrections."""
+    init_db()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM user_corrections")
+        row = cur.fetchone()
+        return row[0] if row else 0
+

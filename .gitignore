@@ -22,7 +22,9 @@ Thumbs.db
 *.pth
 *.safetensors
 *.bin
+*.joblib
 models/category_model/
+
 
 # Gradio cache
 .gradio/

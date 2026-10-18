@@ -2,9 +2,13 @@
   "Food": [
     "rice", "basmati rice", "wheat flour", "atta", "dal", "moong dal",
     "chana dal", "toor dal", "sugar", "salt", "mustard oil", "sunflower oil",
-    "olive oil", "paneer", "curd", "dahi", "milk", "bread", "eggs",
+    "olive oil", "paneer", "curd", "dahi", "milk", "eggs",
     "butter", "cheese", "tomatoes", "potatoes", "onions", "garlic",
     "ginger", "spinach", "palak", "cabbage", "carrots", "gajar",
+    "lettuce", "lettuce iceberg", "avocado", "broccoli", "celery",
+    "zucchini", "cucumber", "bell pepper", "capsicum", "strawberries",
+    "blueberries", "apples", "bananas", "oranges", "grapes", "lemons",
+    "limes", "asparagus", "mushrooms", "cauliflower", "green beans",
     "maggi noodles", "biscuits", "parle g", "namkeen", "poha",
     "sooji", "besan", "maida", "cornflour", "pasta", "vermicelli",
     "oats", "cornflakes", "muesli", "honey", "jam", "pickle", "achar",
@@ -13,7 +17,8 @@
     "garam masala", "jeera", "cumin", "black pepper", "cardamom",
     "cinnamon", "cloves", "bay leaves", "saffron", "dry fruits",
     "almonds", "cashews", "raisins", "walnuts", "peanuts", "chana",
-    "rajma", "kidney beans", "chickpeas", "lentils", "soya chunks"
+    "rajma", "kidney beans", "chickpeas", "lentils", "soya chunks",
+    "chicken breast", "salmon fillet", "tofu", "olive oil extra virgin"
   ],
   "Drinks": [
     "water bottle", "mineral water", "cold drink", "pepsi", "coca cola",
@@ -22,7 +27,8 @@
     "lassi", "chaas", "buttermilk", "coconut water", "green tea",
     "black tea", "tea bags", "coffee", "nescafe", "bru", "horlicks",
     "boost", "complan", "ensure", "red bull", "monster", "beer",
-    "wine", "soda water", "tonic water", "squash", "roohafza"
+    "wine", "soda water", "tonic water", "squash", "roohafza",
+    "sparkling water", "lemonade", "cold brew", "iced tea", "oat milk"
   ],
   "Household": [
     "detergent", "surf excel", "ariel", "tide", "washing powder",
@@ -35,7 +41,8 @@
     "cleaning cloth", "scrubber", "sponge", "steel wool",
     "washing machine liquid", "fabric softener", "comfort",
     "candles", "matchbox", "lighter", "aluminium foil", "cling wrap",
-    "zip lock bags", "rubber gloves", "brush"
+    "zip lock bags", "rubber gloves", "brush", "paper towels",
+    "laundry pods", "dishwasher tablets", "disinfectant wipes"
   ],
   "Personal Care": [
     "shampoo", "head and shoulders", "dove shampoo", "conditioner",
@@ -66,6 +73,17 @@
     "bread", "brown bread", "whole wheat bread", "pav", "bun",
     "cake", "pastry", "muffin", "cupcake", "cookie", "brownie",
     "croissant", "sandwich bread", "pizza base", "naan", "pita",
-    "bagel", "dinner roll", "toast bread", "rusk", "khari"
+    "bagel", "dinner roll", "toast bread", "rusk", "khari",
+    "sourdough", "baguette", "garlic bread", "banana bread", "tortilla"
+  ],
+  "Other": [
+    "0.778 kg net", "1.250 kg @ 4.99", "kg net", "net weight", "tare weight",
+    "cash", "cash tender", "change", "change due", "eftpos", "visa",
+    "mastercard", "amex", "debit card", "credit card", "subtotal",
+    "balance due", "balance", "total amount", "tax invoice", "receipt",
+    "date 12/10/2026", "time 14:30", "invoice number", "customer copy",
+    "special", "loyalty", "loyalty discount", "savings", "member savings",
+    "round off", "bag fee", "reusable bag", "store coupon", "voucher",
+    "cashier 04", "terminal 01", "thank you for shopping", "gst included"
   ]
 }

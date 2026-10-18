@@ -203,10 +203,15 @@ def _tier1_rule_match(item_name: str) -> Optional[Tuple[str, float]]:
     return None
 
 
-# ─── Tier 2: Fine-Tuned DistilBERT Inference ─────────────────────────────────
+PERSONALIZED_MODEL_PATH = "models/user_personalized_model.joblib"
+_temperature = 1.0
+_personalized_pipeline = None
+
+
+# ─── Tier 2: Fine-Tuned Calibrated DistilBERT Inference ─────────────────────
 def load_transformer_model():
-    """Load the fine-tuned sequence classification model once."""
-    global _model, _tokenizer, _id2label, _model_failed
+    """Load the fine-tuned sequence classification model and temperature calibration."""
+    global _model, _tokenizer, _id2label, _model_failed, _temperature
 
     if _model_failed:
         return
@@ -232,12 +237,21 @@ def load_transformer_model():
             else:
                 _id2label = _model.config.id2label
 
+            # Load temperature scaling calibration factor
+            temp_file = f"{MODEL_PATH}/temperature.json"
+            if os.path.exists(temp_file):
+                with open(temp_file) as f:
+                    calib_data = json.load(f)
+                    _temperature = float(calib_data.get("temperature", 1.0))
+            else:
+                _temperature = 1.0
+
         except Exception as exc:
             _model_failed = True
 
 
 def _tier2_transformer_predict(item_name: str) -> Optional[Tuple[str, float]]:
-    """Predict category using DistilBERT model if available."""
+    """Predict category using calibrated DistilBERT model."""
     load_transformer_model()
     if _model is None or _tokenizer is None:
         return None
@@ -255,7 +269,9 @@ def _tier2_transformer_predict(item_name: str) -> Optional[Tuple[str, float]]:
 
         with torch.no_grad():
             outputs = _model(**inputs)
-            probs = torch.softmax(outputs.logits, dim=1)
+            # Temperature scaling calibration: scale logits before softmax
+            scaled_logits = outputs.logits / max(_temperature, 0.1)
+            probs = torch.softmax(scaled_logits, dim=1)
             confidence = probs.max().item()
             pred_id = probs.argmax().item()
 
@@ -263,6 +279,92 @@ def _tier2_transformer_predict(item_name: str) -> Optional[Tuple[str, float]]:
         return category, round(confidence, 3)
     except Exception:
         return None
+
+
+# ─── Personalization Layer & User Correction Retraining ─────────────────────
+def load_personalized_model():
+    """Load user personalized classifier if present."""
+    global _personalized_pipeline
+    if _personalized_pipeline is None and os.path.exists(PERSONALIZED_MODEL_PATH):
+        try:
+            import joblib
+            _personalized_pipeline = joblib.load(PERSONALIZED_MODEL_PATH)
+        except Exception:
+            _personalized_pipeline = None
+    return _personalized_pipeline
+
+
+def _personalized_predict(item_name: str) -> Optional[Tuple[str, float]]:
+    """Predict using lightweight user-adapted model."""
+    pipe = load_personalized_model()
+    if pipe is None:
+        return None
+    try:
+        probs = pipe.predict_proba([item_name.lower()])[0]
+        max_idx = probs.argmax()
+        conf = float(probs[max_idx])
+        pred_label = pipe.classes_[max_idx]
+        if conf >= 0.50:
+            return pred_label, round(conf, 3)
+    except Exception:
+        pass
+    return None
+
+
+def retrain_personalized_classifier() -> dict:
+    """
+    Retrain personalization model on base taxonomy + all accumulated user corrections.
+    """
+    from storage import get_all_user_corrections
+    import joblib
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import Pipeline
+
+    user_corr = get_all_user_corrections()
+    texts = []
+    labels = []
+    weights = []
+
+    # 1. Base taxonomy
+    if os.path.exists("data/categories.json"):
+        with open("data/categories.json", "r", encoding="utf-8") as f:
+            base_tax = json.load(f)
+        for cat, items in base_tax.items():
+            for it in items:
+                texts.append(it.lower())
+                labels.append(cat)
+                weights.append(1.0)
+
+    # 2. Accumulated user corrections (weighted 4.0x)
+    for corr_text, corr_cat in user_corr:
+        texts.append(corr_text.lower())
+        labels.append(corr_cat)
+        weights.append(4.0)
+
+    if not texts:
+        return {"status": "error", "message": "No training data available"}
+
+    pipeline = Pipeline([
+        ('tfidf', TfidfVectorizer(ngram_range=(1, 3), sublinear_tf=True)),
+        ('clf', LogisticRegression(C=2.5, max_iter=200))
+    ])
+
+    pipeline.fit(texts, labels, clf__sample_weight=weights)
+
+    os.makedirs(os.path.dirname(PERSONALIZED_MODEL_PATH) or ".", exist_ok=True)
+    joblib.dump(pipeline, PERSONALIZED_MODEL_PATH)
+
+    global _personalized_pipeline
+    _personalized_pipeline = pipeline
+
+    return {
+        "status": "success",
+        "user_corrections_count": len(user_corr),
+        "total_training_samples": len(texts),
+        "classes": list(pipeline.classes_)
+    }
+
 
 
 # ─── Tier 3: Token Overlap & Cosine Fallback ────────────────────────────────
@@ -287,9 +389,11 @@ def _tier3_semantic_fallback(item_name: str) -> Tuple[str, float]:
 def predict_category(item_name: str) -> Tuple[str, float]:
     """
     Predict category for a line item using multi-tier hybrid classifier:
+    -1. Personalization Memory: User historical corrections (Exact + Fuzzy Match -> 1.0)
     0. Negative Filter: Suppress tender, weight, and discount rows -> 'Other' (0.99)
+    0.5. Personalized Model: Fast Logistic Regression retrained on user corrections
     1. Tier 1: Domain Knowledge Dictionary (Instant, highest precision)
-    2. Tier 2: Fine-Tuned DistilBERT (Transformer sequence classifier)
+    2. Tier 2: Calibrated DistilBERT (Transformer sequence classifier)
     3. Tier 3: Semantic Fallback (Graceful degradation)
     """
     if not item_name or len(item_name.strip()) < 2:
@@ -297,16 +401,31 @@ def predict_category(item_name: str) -> Tuple[str, float]:
 
     clean_name = item_name.strip()
 
-    # Step 0: Check negative non-item filter
+    # Step 0: Check negative non-item filter (tender, scales, promos are strictly non-items)
     if is_non_item_or_discount(clean_name):
         return "Other", 0.99
+
+    # Step 0.5: Personalization Memory (User historical corrections)
+    try:
+        from storage import get_user_correction
+        user_cat = get_user_correction(clean_name)
+        if user_cat:
+            return user_cat, 1.00
+    except Exception:
+        pass
+
+
+    # Step 0.5: Personalized Retrained Layer (if trained on user corrections)
+    pers_match = _personalized_predict(clean_name)
+    if pers_match and pers_match[1] >= 0.70:
+        return pers_match
 
     # Step 1: Check high-precision knowledge dictionary
     match = _tier1_rule_match(clean_name)
     if match:
         return match
 
-    # Step 2: Check fine-tuned DistilBERT model
+    # Step 2: Check fine-tuned calibrated DistilBERT model
     match = _tier2_transformer_predict(clean_name)
     if match:
         cat, conf = match
@@ -315,6 +434,7 @@ def predict_category(item_name: str) -> Tuple[str, float]:
 
     # Step 3: Semantic token fallback
     return _tier3_semantic_fallback(clean_name)
+
 
 
 def categorize_items(items: List[dict]) -> List[dict]:

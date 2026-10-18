@@ -100,14 +100,22 @@ def scan_receipt_action(image, engine_choice: str):
     except Exception:
         categorized = raw_items
 
-    # Build editable DataFrame
+    # Build editable DataFrame with Active Learning highlighting (<70% confidence)
     rows = []
+    low_conf_count = 0
     for it in categorized:
+        conf_raw = float(it.get('confidence', 0.90))
+        if conf_raw < 0.70:
+            low_conf_count += 1
+            conf_str = f"⚠️ {conf_raw*100:.0f}% (Review)"
+        else:
+            conf_str = f"✅ {conf_raw*100:.0f}%"
+
         rows.append({
             "Item Name": it.get("item_name", ""),
             "Category": it.get("category", "Other"),
             "Amount": float(it.get("amount", 0.0)),
-            "Confidence": f"{float(it.get('confidence', 0.90))*100:.0f}%",
+            "Confidence": conf_str,
             "Qty": float(it.get("quantity", 1.0))
         })
 
@@ -120,13 +128,19 @@ def scan_receipt_action(image, engine_choice: str):
     total_val = f"{curr}{meta['grand_total']:.2f}" if meta.get("grand_total") is not None else f"{curr}{sum(it['amount'] for it in categorized):.2f}"
     recon = f"Status: {meta.get('reconciliation_status', 'Estimated')}"
 
-    # Prompt user if store name was unreadable
+    # Prompt user if store name was unreadable or low confidence items exist
     if not store:
         status_msg = f"Extracted {len(categorized)} items ({curr}). Merchant name was unclear — please enter Store Name below before saving."
     else:
-        status_msg = f"Extracted {len(categorized)} items ({curr}) successfully! Review and edit rows below before saving."
+        status_msg = f"Extracted {len(categorized)} items ({curr}) successfully!"
+
+    if low_conf_count > 0:
+        status_msg += f" ⚠️ **Active Learning Review:** {low_conf_count} low-confidence item(s) (<70%) flagged for verification."
+    else:
+        status_msg += " Review and edit rows below before saving."
 
     return store, date_val, subtotal_val, tax_val, total_val, curr, recon, df, annotated_img, raw_text, status_msg
+
 
 
 def recompute_items_total(df: pd.DataFrame, curr: str) -> str:
@@ -212,7 +226,32 @@ def confirm_and_save_receipt(
         notes=notes
     )
 
+    # Active Learning: record every confirmed user correction
+    try:
+        from storage import record_user_correction
+        for it in items_to_save:
+            record_user_correction(it["item_name"], it["category"], store_name)
+    except Exception:
+        pass
+
     return f"✅ **Saved successfully!** Receipt ID: `{receipt_id}` ({c}{final_total:,.2f}) recorded to Monthly Tracker."
+
+
+def retrain_personalization_action() -> str:
+    """Action handler to retrain personalized classifier on user corrections."""
+    from categorizer import retrain_personalized_classifier
+    try:
+        res = retrain_personalized_classifier()
+        if res.get("status") == "success":
+            return (
+                f"✅ **Classifier Personalization Updated!**\n\n"
+                f"- Incorporated **{res['user_corrections_count']} user corrections** into active memory.\n"
+                f"- Total training representations: **{res['total_training_samples']} samples** across **{len(res['classes'])} classes**."
+            )
+        return f"⚠️ {res.get('message', 'Retraining completed with warnings.')}"
+    except Exception as exc:
+        return f"⚠️ Retraining error: {str(exc)}"
+
 
 
 # ─── Tab 2: Monthly Financial Analytics ──────────────────────────────────────
@@ -449,11 +488,27 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
             save_db_btn = gr.Button("💾 Confirm & Save to Expenses", variant="primary", size="lg")
             save_feedback = gr.Markdown("")
 
+            with gr.Accordion("🧠 Active Learning & User Personalization", open=False):
+                gr.Markdown(
+                    "The system continuously learns from your edits. Saved item categories are stored in "
+                    "your local SQLite corrections table (`user_corrections`) and automatically override model predictions. "
+                    "You can also trigger on-device lightweight retraining anytime to adapt classification weights."
+                )
+                with gr.Row():
+                    retrain_model_btn = gr.Button("🔄 Retrain Classifier on Saved Corrections", size="sm")
+                retrain_model_feedback = gr.Markdown("")
+
             with gr.Accordion("🖼️ Visual OCR Inspector (Bounding Boxes & Layout)", open=False):
                 annotated_preview = gr.Image(label="Annotated Image with Text Bounding Boxes", height=450)
 
             with gr.Accordion("📄 Raw OCR Transcript (Debug View)", open=False):
                 raw_ocr_output = gr.Textbox(label="Raw Recognized Text", lines=8, interactive=False)
+
+            retrain_model_btn.click(
+                fn=retrain_personalization_action,
+                outputs=[retrain_model_feedback]
+            )
+
 
             # Event Handlers
             sample_picker.change(
