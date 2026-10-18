@@ -897,13 +897,13 @@ fintech_theme = gr.themes.Soft(
 )
 
 # ─── Gradio Application Definition ──────────────────────────────────────────
-with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
+with gr.Blocks(title="Enpensify-Smart Expense Tracker") as demo:
 
     # ── Top Navbar ──────────────────────────────────────────────────────────
     gr.HTML("""
     <div class="app-header">
         <div>
-            <div class="app-title">ExpensifyML <span style="font-weight:400; font-size:13px; color:#94a3b8;">v2.0</span></div>
+            <div class="app-title">Enpensify-Smart Expense Tracker <span style="font-weight:400; font-size:13px; color:#94a3b8;">v2.0</span></div>
             <div class="app-subtitle">Automated Receipt Digitization, Active Learning Categorization & Expense Intelligence</div>
         </div>
         <div class="app-badges">
