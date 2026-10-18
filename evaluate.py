@@ -133,6 +133,21 @@ CATEGORIZATION_TEST_SET: List[Tuple[str, str]] = [
     # Apparel
     ("Cotton Crew Neck T-Shirt", "Apparel"),
     ("Denim Blue Jeans 32", "Apparel"),
+    # Transportation
+    ("Uber Premier Trip", "Transportation"),
+    ("Shell Unleaded Petrol", "Transportation"),
+    # Entertainment
+    ("PVR Cinemas Movie Ticket", "Entertainment"),
+    ("Netflix Premium Subscription", "Entertainment"),
+    # Utilities
+    ("Airtel Fiber Broadband Bill", "Utilities"),
+    ("Bescom Electricity Bill", "Utilities"),
+    # Home & Hardware
+    ("Claw Hammer 16oz Steel", "Home & Hardware"),
+    ("IKEA Dining Chair", "Home & Hardware"),
+    # Office & Stationery
+    ("Classmate Spiral Notebook A4", "Office & Stationery"),
+    ("Ballpoint Gel Pen 10-Pack", "Office & Stationery"),
 ]
 
 

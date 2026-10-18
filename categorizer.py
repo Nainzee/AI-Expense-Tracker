@@ -28,13 +28,18 @@ _model_failed = False
 CANONICAL_CATEGORIES = [
     "Food",
     "Drinks",
+    "Dining",
+    "Bakery",
     "Household",
     "Personal Care",
     "Medical",
-    "Bakery",
-    "Dining",
+    "Transportation",
     "Electronics",
     "Apparel",
+    "Home & Hardware",
+    "Entertainment",
+    "Utilities",
+    "Office & Stationery",
     "Other",
 ]
 
@@ -149,6 +154,21 @@ KNOWLEDGE_BASE: Dict[str, List[str]] = {
         "pasta", "salad bowl", "soup", "buffet", "dine in", "takeaway", "latte",
         "cappuccino", "espresso"
     ],
+    "Transportation": [
+        # Fuel, Gas & EV
+        "petrol", "diesel", "fuel", "gasoline", "unleaded", "cng", "lpg fuel",
+        "gas station", "fuel pump", "ev charge", "ev charging", "charging session",
+        # Ride Hail, Taxi & Transit
+        "uber", "uber trip", "uber ride", "ola", "ola ride", "ola cabs", "lyft",
+        "taxi", "cab", "auto fare", "rickshaw", "meter fare",
+        # Tolls & Parking
+        "toll", "toll plaza", "fastag", "tollway", "parking", "parking fee",
+        "parking ticket", "valet parking",
+        # Public Transit, Railway & Flights
+        "metro", "subway", "train ticket", "railway", "irctc", "bus ticket",
+        "transit pass", "metro card", "ferry", "flight", "airline", "boarding pass",
+        "indigo", "air india"
+    ],
     "Electronics": [
         "charger", "cable", "usb", "adapter", "earphones", "headphones",
         "mouse", "keyboard", "battery", "powerbank", "bulb", "led", "wire"
@@ -156,6 +176,56 @@ KNOWLEDGE_BASE: Dict[str, List[str]] = {
     "Apparel": [
         "shirt", "t-shirt", "jeans", "trousers", "socks", "shoes", "slippers",
         "kurta", "dress", "belt", "cap", "towel"
+    ],
+    "Home & Hardware": [
+        # Hardware & Tools
+        "hammer", "screwdriver", "drill", "screw", "screws", "nails", "pliers",
+        "wrench", "tape measure", "super glue", "fevicol", "paint", "brush",
+        "hardware", "extension cord", "power strip",
+        # Furniture & Home Goods
+        "ikea", "table", "chair", "desk", "stool", "shelf", "cushion", "pillow",
+        "bedsheet", "blanket", "curtain", "mattress", "rug", "carpet",
+        # Kitchenware & Decor
+        "pan", "pot", "cookware", "kettle", "knife", "cutting board", "plate",
+        "plates", "bowl", "bowls", "mug", "mugs", "plant", "flower pot",
+        "planter", "vase", "mirror", "frame"
+    ],
+    "Entertainment": [
+        # Cinema & Movies
+        "cinema", "movie", "movie ticket", "imax", "pvr", "inox", "cinepolis",
+        "amc", "popcorn combo", "theatre",
+        # Streaming & Digital
+        "netflix", "spotify", "prime video", "disney", "youtube premium",
+        "apple music", "hulu", "streaming subscription", "audible",
+        # Gaming & Hobbies
+        "playstation", "xbox", "nintendo", "steam", "video game", "gaming",
+        "board game", "amusement park", "arcade", "bowling", "museum", "concert",
+        "book", "novel", "comic", "magazine"
+    ],
+    "Utilities": [
+        # Electricity & Gas
+        "electricity", "power bill", "electric bill", "bescom", "tneb", "mseb",
+        "gas bill", "cooking gas", "lpg cylinder", "cylinder refill", "indane",
+        "bharat gas", "hp gas",
+        # Water & Municipal
+        "water bill", "water utility", "sewerage",
+        # Telecom & Internet
+        "broadband", "wifi", "internet bill", "fiber", "airtel", "jio",
+        "vodafone", "vi recharge", "mobile recharge", "phone bill", "landline",
+        "postpaid bill", "prepaid recharge"
+    ],
+    "Office & Stationery": [
+        # Paper & Notebooks
+        "notebook", "notepad", "diary", "journal", "register", "a4 paper",
+        "printer paper", "cardstock", "envelope", "envelopes",
+        # Writing Instruments
+        "pen", "pens", "ballpoint", "gel pen", "pencil", "pencils",
+        "highlighter", "marker", "markers", "eraser", "sharpener",
+        # Desk Accessories & Shipping
+        "stapler", "staples", "paper clip", "paper clips", "binder", "folder",
+        "scissors", "tape", "scotch tape", "glue stick", "calculator",
+        "sticky notes", "post-it", "photocopy", "xerox", "printing",
+        "lamination", "courier", "postage", "shipping fee", "dhl", "fedex"
     ],
 }
 
@@ -169,9 +239,14 @@ def _tier1_rule_match(item_name: str) -> Optional[Tuple[str, float]]:
     best_score = 0.0
 
     SPECIFICITY_WEIGHTS = {
+        "Transportation": 1.45,
+        "Utilities": 1.45,
+        "Entertainment": 1.4,
         "Dining": 1.4,
-        "Electronics": 1.3,
-        "Apparel": 1.3,
+        "Electronics": 1.35,
+        "Apparel": 1.35,
+        "Home & Hardware": 1.3,
+        "Office & Stationery": 1.3,
         "Medical": 1.25,
         "Bakery": 1.25,
         "Drinks": 1.2,

@@ -36,13 +36,18 @@ CHARTS_DIR = os.path.join(BASE_DIR, "receipts_db")
 CATEGORY_COLORS: Dict[str, str] = {
     "Food": "#10B981",          # Emerald
     "Drinks": "#3B82F6",        # Blue
+    "Dining": "#F97316",        # Orange
+    "Bakery": "#EC4899",        # Pink
     "Household": "#F59E0B",     # Amber
     "Personal Care": "#8B5CF6", # Purple
     "Medical": "#EF4444",       # Rose / Red
-    "Bakery": "#EC4899",        # Pink
-    "Dining": "#F97316",        # Orange
+    "Transportation": "#14B8A6", # Teal
     "Electronics": "#06B6D4",   # Cyan
     "Apparel": "#6366F1",       # Indigo
+    "Home & Hardware": "#78716C", # Stone
+    "Entertainment": "#A855F7", # Violet
+    "Utilities": "#EAB308",     # Gold
+    "Office & Stationery": "#0284C7", # Sky Blue
     "Other": "#64748B",         # Slate
 }
 
@@ -231,13 +236,18 @@ def generate_monthly_chart(month_key: Optional[str] = None) -> Optional[str]:
 DEFAULT_CATEGORY_BUDGETS: Dict[str, float] = {
     "Food": 15000.0,
     "Drinks": 3000.0,
+    "Dining": 5000.0,
+    "Bakery": 2000.0,
     "Household": 4000.0,
     "Personal Care": 3500.0,
     "Medical": 3000.0,
-    "Bakery": 2000.0,
-    "Dining": 5000.0,
+    "Transportation": 5000.0,
     "Electronics": 10000.0,
     "Apparel": 5000.0,
+    "Home & Hardware": 6000.0,
+    "Entertainment": 3000.0,
+    "Utilities": 4000.0,
+    "Office & Stationery": 2000.0,
     "Other": 2500.0,
 }
 
@@ -355,7 +365,7 @@ def generate_insights(data: Optional[dict]) -> List[str]:
 
 
     # 1. Executive Health Score & Discipline Index
-    essential_cats = {"Food", "Medical", "Household", "Personal Care"}
+    essential_cats = {"Food", "Medical", "Household", "Personal Care", "Utilities", "Transportation"}
     essential_spend = sum(cat_totals.get(c, 0.0) for c in essential_cats)
     essential_ratio = (essential_spend / max(grand, 1.0)) * 100
 
@@ -525,8 +535,12 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
             lines.append(f"| **{cat}** | {curr}{amt:,.2f} | {pct:.1f}% | {cnt} |")
         return "\n".join(lines)
 
-    # 3. Specific category lookup (Food, Drinks, Medical, etc.)
-    for cat in ["Food", "Drinks", "Household", "Personal Care", "Medical", "Bakery", "Dining", "Electronics", "Apparel"]:
+    # 3. Specific category lookup (Food, Drinks, Medical, Transportation, etc.)
+    for cat in [
+        "Food", "Drinks", "Dining", "Bakery", "Household", "Personal Care",
+        "Medical", "Transportation", "Electronics", "Apparel", "Home & Hardware",
+        "Entertainment", "Utilities", "Office & Stationery"
+    ]:
         if cat.lower() in q:
             cat_amt = cat_totals.get(cat, 0.0)
             cat_pct = (cat_amt / max(grand, 1.0)) * 100

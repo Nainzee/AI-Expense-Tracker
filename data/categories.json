@@ -76,6 +76,58 @@
     "bagel", "dinner roll", "toast bread", "rusk", "khari",
     "sourdough", "baguette", "garlic bread", "banana bread", "tortilla"
   ],
+  "Dining": [
+    "margherita pizza", "chicken burger", "veg burger", "french fries", "chicken biryani",
+    "veg biryani", "paneer butter masala", "garlic naan", "butter naan", "dal makhani",
+    "pasta alfredo", "caesar salad", "hot coffee", "cappuccino", "cafe latte", "cold brew",
+    "masala dosa", "idli sambar", "thali meal", "spring rolls", "momos", "mexican taco"
+  ],
+  "Electronics": [
+    "usb-c cable", "lightning cable", "fast charger", "power bank", "wireless mouse",
+    "bluetooth keyboard", "wireless earphones", "airpods", "headphones", "aux cable",
+    "hdmi cable", "led bulb", "surge protector", "usb flash drive", "phone case",
+    "screen protector", "memory card", "webcam", "laptop stand", "battery aa"
+  ],
+  "Apparel": [
+    "cotton t-shirt", "denim jeans", "casual shirt", "formal trousers", "hoodie",
+    "sweatshirt", "running shoes", "sneakers", "leather belt", "cotton socks",
+    "sports shorts", "cotton kurta", "silk saree", "winter jacket", "track pants",
+    "bath towel", "flip flops", "leather wallet", "baseball cap", "woolen scarf"
+  ],
+  "Transportation": [
+    "petrol", "diesel", "fuel", "gasoline", "unleaded petrol", "cng gas",
+    "uber trip", "uber ride", "ola cab", "ola ride", "taxi fare",
+    "auto rickshaw fare", "parking ticket", "valet parking", "fastag toll",
+    "toll plaza fee", "metro smart card", "metro ticket", "irctc train ticket",
+    "bus ticket", "ev fast charging", "airport cab fare", "transit bus pass"
+  ],
+  "Entertainment": [
+    "movie ticket", "cinema ticket", "imax ticket", "pvr popcorn combo",
+    "netflix subscription", "spotify premium", "prime video", "disney hotstar",
+    "youtube premium", "playstation game", "xbox game pass", "steam game",
+    "concert ticket", "amusement park pass", "bowling game", "paperback novel",
+    "comic book", "museum admission", "arcade game card"
+  ],
+  "Utilities": [
+    "electricity bill", "power bill", "bescom electricity", "cooking gas refill",
+    "lpg cylinder", "indane gas cylinder", "water bill", "broadband bill",
+    "wifi bill", "airtel fiber", "jio fiber", "mobile recharge", "prepaid mobile recharge",
+    "airtel mobile bill", "jio recharge", "postpaid telephone bill"
+  ],
+  "Home & Hardware": [
+    "claw hammer", "screwdriver set", "cordless drill", "wood screws", "wall plugs",
+    "plier set", "adjustable wrench", "steel tape measure", "super glue", "fevicol sh",
+    "ikea side table", "dining chair", "cushion cover", "cotton bedsheet", "microfiber pillow",
+    "non stick fry pan", "stainless steel pot", "chef knife", "wooden cutting board",
+    "ceramic coffee mug", "indoor plant pot", "extension cord 4 way"
+  ],
+  "Office & Stationery": [
+    "spiral notebook a4", "ruled diary", "a4 copy paper 500 sheets", "ballpoint pen 10-pack",
+    "gel ink pen", "wooden pencils 10s", "highlighter set", "whiteboard marker",
+    "desk stapler", "staple pins 1000s", "paper clips box", "plastic ruler 30cm",
+    "document file folder", "craft scissors", "scotch transparent tape", "glue stick 15g",
+    "sticky notes pad", "courier shipping fee", "xerox photocopy", "lamination pouch"
+  ],
   "Other": [
     "0.778 kg net", "1.250 kg @ 4.99", "kg net", "net weight", "tare weight",
     "cash", "cash tender", "change", "change due", "eftpos", "visa",

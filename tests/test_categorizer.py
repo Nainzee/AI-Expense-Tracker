@@ -9,14 +9,13 @@ from categorizer import predict_category, categorize_items, CANONICAL_CATEGORIES
 class TestCategorizer(unittest.TestCase):
 
     def test_canonical_categories_membership(self):
-        self.assertIn("Food", CANONICAL_CATEGORIES)
-        self.assertIn("Drinks", CANONICAL_CATEGORIES)
-        self.assertIn("Medical", CANONICAL_CATEGORIES)
-        self.assertIn("Household", CANONICAL_CATEGORIES)
-        self.assertIn("Personal Care", CANONICAL_CATEGORIES)
-        self.assertIn("Electronics", CANONICAL_CATEGORIES)
-        self.assertIn("Apparel", CANONICAL_CATEGORIES)
-        self.assertIn("Dining", CANONICAL_CATEGORIES)
+        expected_cats = [
+            "Food", "Drinks", "Dining", "Bakery", "Household", "Personal Care",
+            "Medical", "Transportation", "Electronics", "Apparel", "Home & Hardware",
+            "Entertainment", "Utilities", "Office & Stationery", "Other"
+        ]
+        for cat in expected_cats:
+            self.assertIn(cat, CANONICAL_CATEGORIES)
 
     def test_high_precision_rules(self):
         cases = [
@@ -29,6 +28,14 @@ class TestCategorizer(unittest.TestCase):
             ("Cotton T-Shirt", "Apparel"),
             ("Margherita Pizza", "Dining"),
             ("Chocolate Brownie", "Bakery"),
+            ("Uber Trip Fare", "Transportation"),
+            ("Unleaded Petrol 20L", "Transportation"),
+            ("Movie Ticket IMAX", "Entertainment"),
+            ("Netflix Subscription", "Entertainment"),
+            ("Electricity Bill Payment", "Utilities"),
+            ("Broadband Internet Bill", "Utilities"),
+            ("Claw Hammer 16oz", "Home & Hardware"),
+            ("Spiral Notebook A4", "Office & Stationery"),
         ]
         for name, expected_cat in cases:
             cat, conf = predict_category(name)
