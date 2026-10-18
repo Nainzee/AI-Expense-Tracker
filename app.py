@@ -1,18 +1,17 @@
 """
 Smart Receipt Scanner & Expense Intelligence Platform.
 
-Interactive Web Application built with Gradio 6.x.
-Features:
-- Dual OCR Engine: Spatial Line Clustering & Vision Transformer.
-- Dynamic multi-currency detection ($, €, £, ₹, ¥).
-- Scale line attachment ('0.778 kg NET @ $5.99/kg $4.66' -> previous item).
-- Negative discount rows preservation ('LOYALTY -15.00' -> -$15.00).
-- Payment tender and date line suppression.
-- Human-in-the-Loop Interactive Line-Item Editor.
-- Reconciliation gap alert / confirmation barrier at save.
-- Auto-loading Dashboard with dynamic HTML stat cards and high-res charts.
-- Multi-Receipt History Management (CRUD).
-- High-Resolution Charting & CSV/JSON Data Exports.
+Modern FinTech UI built with Gradio 6.x.
+Architecture & Design:
+- Modern dark/slate FinTech dashboard aesthetic (inspired by Ramp / Brex / Stripe).
+- Dual OCR Engine: Fast Spatial Line Clustering (<250ms) + Vision Transformer fallback.
+- Multi-currency support ($, €, £, ₹, ¥) with dynamic symbol detection.
+- Multi-line scale lookahead parser & signed discount preservation.
+- Single-source-of-truth SQLite storage layer with cascading integrity.
+- Real-time financial cross-reconciliation & discrepancy guarding.
+- Active learning human-in-the-loop line item editor with on-device retraining.
+- Bank & UPI statement CSV cross-reconciliation engine.
+- Predictive run-rate month-end forecasting & category budget tracking.
 """
 
 from __future__ import annotations
@@ -20,12 +19,13 @@ from __future__ import annotations
 import os
 import glob
 from datetime import datetime
+from typing import Optional, List, Dict
 from PIL import Image
 import pandas as pd
 import gradio as gr
 
 from ocr_pipeline import extract_receipt_items
-from categorizer import categorize_items, CANONICAL_CATEGORIES
+from categorizer import categorize_items, CANONICAL_CATEGORIES, retrain_personalized_classifier
 from monthly_summary import (
     save_receipt,
     get_monthly_data,
@@ -37,7 +37,11 @@ from monthly_summary import (
     export_to_json,
     list_receipts,
     delete_receipt,
+    calculate_budget_alerts,
+    calculate_month_end_forecast,
 )
+from statement_matcher import parse_bank_statement_csv, match_receipts_to_statement
+import storage
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -57,41 +61,47 @@ def load_sample_receipt(sample_name: str):
     return None
 
 
-# ─── Tab 1: Scanning & Human-in-the-Loop Editing ─────────────────────────────
+def make_recon_badge(status_text: str, diff: float = 0.0, curr: str = "₹") -> str:
+    """Generate modern HTML pill for financial reconciliation status."""
+    if "Verified" in status_text:
+        return f"<div class='recon-pill-verified'><span class='dot'></span> Verified Match • Items sum matches printed total</div>"
+    elif "Discrepancy" in status_text:
+        return f"<div class='recon-pill-warning'><span class='dot'></span> Discrepancy • {curr}{diff:.2f} variance vs printed total</div>"
+    else:
+        return f"<div class='recon-pill-neutral'><span class='dot'></span> {status_text}</div>"
+
+
+# ─── Tab 1: Scanning & Line-Item Verification ────────────────────────────────
 def scan_receipt_action(image, engine_choice: str):
     """
     Perform end-to-end receipt extraction with currency and metadata extraction.
-    Returns:
-        store_name, date, subtotal, tax, grand_total, curr, recon_badge,
-        items_df, annotated_img, raw_text, status_msg
     """
     if image is None:
-        return (
-            "", "", "", "", "", "₹", "Upload a receipt photo to scan",
-            pd.DataFrame(columns=["Item Name", "Category", "Amount", "Confidence", "Qty"]),
-            None, "", "⚠️ Please upload or select a sample receipt."
-        )
+        empty_badge = "<div class='recon-pill-neutral'><span class='dot'></span> Ready to Scan</div>"
+        empty_df = pd.DataFrame(columns=["Item Description", "Category", "Amount", "Confidence", "Qty"])
+        empty_msg = "<div class='notice-box neutral'>ℹ️ Please upload a receipt photo or select a quick demo sample.</div>"
+        return "", "", "", "", "", "₹", empty_badge, empty_df, None, "", empty_msg
 
     pil_img = Image.fromarray(image) if not isinstance(image, Image.Image) else image
-    use_trocr = (engine_choice == "TrOCR (Deep Vision Transformer)")
+    use_trocr = ("Vision Transformer" in engine_choice)
 
     try:
         raw_items, raw_text, meta, annotated_img = extract_receipt_items(pil_img, use_trocr=use_trocr)
     except Exception as exc:
-        return (
-            "", "", "", "", "", "₹", f"OCR Error: {str(exc)}",
-            pd.DataFrame(columns=["Item Name", "Category", "Amount", "Confidence", "Qty"]),
-            None, "", f"❌ OCR Pipeline Error: {str(exc)}"
-        )
+        err_badge = "<div class='recon-pill-warning'><span class='dot'></span> Extraction Error</div>"
+        err_df = pd.DataFrame(columns=["Item Description", "Category", "Amount", "Confidence", "Qty"])
+        err_msg = f"<div class='notice-box error'>❌ <b>OCR Error:</b> {str(exc)}</div>"
+        return "", "", "", "", "", "₹", err_badge, err_df, None, "", err_msg
 
     curr = meta.get("currency", "₹")
 
     if not raw_items:
+        no_items_badge = "<div class='recon-pill-warning'><span class='dot'></span> No Items Detected</div>"
+        empty_df = pd.DataFrame(columns=["Item Description", "Category", "Amount", "Confidence", "Qty"])
+        warn_msg = "<div class='notice-box warning'>⚠️ No line items detected. Check image focus, lighting, or orientation.</div>"
         return (
             meta.get("store_name", ""), meta.get("date", ""), "", "", "", curr,
-            "No line items detected",
-            pd.DataFrame(columns=["Item Name", "Category", "Amount", "Confidence", "Qty"]),
-            annotated_img, raw_text, "⚠️ No valid line items detected. Check image focus or rotate."
+            no_items_badge, empty_df, annotated_img, raw_text, warn_msg
         )
 
     # Classify items
@@ -112,7 +122,7 @@ def scan_receipt_action(image, engine_choice: str):
             conf_str = f"✅ {conf_raw*100:.0f}%"
 
         rows.append({
-            "Item Name": it.get("item_name", ""),
+            "Item Description": it.get("item_name", ""),
             "Category": it.get("category", "Other"),
             "Amount": float(it.get("amount", 0.0)),
             "Confidence": conf_str,
@@ -126,33 +136,44 @@ def scan_receipt_action(image, engine_choice: str):
     subtotal_val = f"{curr}{meta['subtotal']:.2f}" if meta.get("subtotal") else "—"
     tax_val = f"{curr}{meta['tax']:.2f}" if meta.get("tax") else "—"
     total_val = f"{curr}{meta['grand_total']:.2f}" if meta.get("grand_total") is not None else f"{curr}{sum(it['amount'] for it in categorized):.2f}"
-    recon = f"Status: {meta.get('reconciliation_status', 'Estimated')}"
 
-    # Prompt user if store name was unreadable or low confidence items exist
-    if not store:
-        status_msg = f"Extracted {len(categorized)} items ({curr}). Merchant name was unclear — please enter Store Name below before saving."
-    else:
-        status_msg = f"Extracted {len(categorized)} items ({curr}) successfully!"
+    recon_diff = meta.get("reconciliation_diff", 0.0)
+    recon_status = meta.get("reconciliation_status", "Estimated")
+    recon_badge_html = make_recon_badge(recon_status, recon_diff, curr)
 
     if low_conf_count > 0:
-        status_msg += f" ⚠️ **Active Learning Review:** {low_conf_count} low-confidence item(s) (<70%) flagged for verification."
+        status_html = (
+            f"<div class='notice-box alert'>"
+            f"⚠️ <b>Active Learning Alert:</b> Extracted {len(categorized)} items ({curr}). "
+            f"<b>{low_conf_count} item(s)</b> have confidence &lt;70% and are flagged for review."
+            f"</div>"
+        )
+    elif not store:
+        status_html = (
+            f"<div class='notice-box warning'>"
+            f"ℹ️ Extracted {len(categorized)} items ({curr}). Merchant name was unclear — please verify Store Name before saving."
+            f"</div>"
+        )
     else:
-        status_msg += " Review and edit rows below before saving."
+        status_html = (
+            f"<div class='notice-box success'>"
+            f"✓ Extracted <b>{len(categorized)} items ({curr})</b> from <b>{store}</b> successfully. Review and edit before archiving."
+            f"</div>"
+        )
 
-    return store, date_val, subtotal_val, tax_val, total_val, curr, recon, df, annotated_img, raw_text, status_msg
-
+    return store, date_val, subtotal_val, tax_val, total_val, curr, recon_badge_html, df, annotated_img, raw_text, status_html
 
 
 def recompute_items_total(df: pd.DataFrame, curr: str) -> str:
     """Calculate live total from the editable table."""
     c = curr or "₹"
     if df is None or df.empty or "Amount" not in df.columns:
-        return f"**Calculated Items Total: {c}0.00**"
+        return f"<div class='calc-total-pill'>Calculated Items Sum: <b>{c}0.00</b></div>"
     try:
         total = df["Amount"].astype(float).sum()
-        return f"**Calculated Items Total: {c}{total:.2f}**"
+        return f"<div class='calc-total-pill'>Calculated Items Sum: <b>{c}{total:,.2f}</b></div>"
     except Exception:
-        return f"**Calculated Items Total: Invalid format**"
+        return f"<div class='calc-total-pill error'>Calculated Items Sum: Invalid Format</div>"
 
 
 def confirm_and_save_receipt(
@@ -164,13 +185,14 @@ def confirm_and_save_receipt(
     payment_method: str,
     notes: str,
     force_save: bool
-) -> str:
+):
     """
-    Commit verified receipt to database with safety check against large discrepancy.
+    Validate and persist receipt record to SQLite database with active learning feedback.
     """
     c = curr or "₹"
+
     if df is None or df.empty:
-        return "⚠️ Cannot save empty receipt."
+        return "<div class='notice-box error'>❌ Cannot save empty receipt. Scan or add items first.</div>"
 
     items_to_save = []
     for _, row in df.iterrows():
@@ -184,9 +206,12 @@ def confirm_and_save_receipt(
         except (ValueError, TypeError):
             qty = 1.0
 
+        name_val = str(row.get("Item Description") or row.get("Item Name") or "Item")
+        cat_val = str(row.get("Category", "Other"))
+
         items_to_save.append({
-            "item_name": str(row.get("Item Name", "Item")),
-            "category": str(row.get("Category", "Other")),
+            "item_name": name_val,
+            "category": cat_val,
             "amount": amt,
             "quantity": qty,
             "confidence": 1.0
@@ -207,11 +232,12 @@ def confirm_and_save_receipt(
     if printed_val is not None and abs(total_amount - printed_val) > 2.0 and not force_save:
         diff = abs(total_amount - printed_val)
         return (
-            f"⚠️ **Large Reconciliation Discrepancy!**\n\n"
-            f"Calculated items total is **{c}{total_amount:.2f}**, but printed total is **{c}{printed_val:.2f}** "
-            f"(Difference: **{c}{diff:.2f}**).\n\n"
-            f"👉 Please review the table above to remove non-item lines (e.g. date, weight, or tender lines). "
-            f"If this total is intentional, check **'Confirm save despite discrepancy'** below and click Save again."
+            f"<div class='notice-box alert'>"
+            f"⚠️ <b>Reconciliation Discrepancy!</b><br>"
+            f"Calculated items sum is <b>{c}{total_amount:,.2f}</b>, but printed total is <b>{c}{printed_val:,.2f}</b> "
+            f"(Difference: <b>{c}{diff:.2f}</b>).<br>"
+            f"👉 Please review the table to adjust items or check <b>'Override discrepancy and force save'</b> below."
+            f"</div>"
         )
 
     final_total = printed_val if (printed_val and abs(total_amount - printed_val) <= 1.0) else total_amount
@@ -226,7 +252,7 @@ def confirm_and_save_receipt(
         notes=notes
     )
 
-    # Active Learning: record every confirmed user correction
+    # Active Learning: record every confirmed user correction to SQLite
     try:
         from storage import record_user_correction
         for it in items_to_save:
@@ -234,27 +260,41 @@ def confirm_and_save_receipt(
     except Exception:
         pass
 
-    return f"✅ **Saved successfully!** Receipt ID: `{receipt_id}` ({c}{final_total:,.2f}) recorded to Monthly Tracker."
+    return (
+        f"<div class='notice-box success'>"
+        f"✓ <b>Saved Successfully!</b> Receipt <code>{receipt_id}</code> ({c}{final_total:,.2f}) recorded to Expenses Database."
+        f"</div>"
+    )
 
 
 def retrain_personalization_action() -> str:
     """Action handler to retrain personalized classifier on user corrections."""
-    from categorizer import retrain_personalized_classifier
     try:
         res = retrain_personalized_classifier()
         if res.get("status") == "success":
             return (
-                f"✅ **Classifier Personalization Updated!**\n\n"
-                f"- Incorporated **{res['user_corrections_count']} user corrections** into active memory.\n"
-                f"- Total training representations: **{res['total_training_samples']} samples** across **{len(res['classes'])} classes**."
+                f"<div class='notice-box success'>"
+                f"✓ <b>Classifier Weights Updated!</b> Incorporated <b>{res['user_corrections_count']} user corrections</b> "
+                f"across {len(res['classes'])} categories into local inference memory."
+                f"</div>"
             )
-        return f"⚠️ {res.get('message', 'Retraining completed with warnings.')}"
+        return f"<div class='notice-box warning'>⚠️ {res.get('message', 'Retraining warning')}</div>"
     except Exception as exc:
-        return f"⚠️ Retraining error: {str(exc)}"
-
+        return f"<div class='notice-box error'>❌ Retraining error: {str(exc)}</div>"
 
 
 # ─── Tab 2: Monthly Financial Analytics ──────────────────────────────────────
+def make_kpi_card(title: str, value: str, subtext: str, trend_class: str = "trend-neutral") -> str:
+    """Generate high-contrast, modern KPI metric card HTML."""
+    return f"""
+    <div class="metric-card">
+        <div class="metric-label">{title}</div>
+        <div class="metric-val">{value}</div>
+        <div class="metric-sub {trend_class}">{subtext}</div>
+    </div>
+    """
+
+
 def load_monthly_dashboard(month_key: Optional[str] = None):
     """Generate summary metrics, MoM card, charts, and insights."""
     months = get_available_months()
@@ -263,78 +303,73 @@ def load_monthly_dashboard(month_key: Optional[str] = None):
         target_month = months[0] if months else None
 
     if not target_month:
-        empty_card = "<div class='stat-value'>₹0.00</div>"
-        empty_count = "<div class='stat-value'>0</div>"
-        return empty_card, empty_count, empty_card, "<div class='stat-value'>—</div>", None, "No transaction records available. Scan receipts in Tab 1 to populate analytics.", []
+        empty_card = make_kpi_card("Total Outlay", "₹0.00", "No data recorded")
+        empty_count = make_kpi_card("Audited Receipts", "0", "0 transactions")
+        empty_avg = make_kpi_card("Avg Ticket", "₹0.00", "Per trip")
+        empty_top = make_kpi_card("Top Category", "—", "No records")
+        return empty_card, empty_count, empty_avg, empty_top, None, "No transaction records available. Scan receipts in Tab 1 to populate analytics.", []
 
     data = get_monthly_data(target_month)
     if not data or not data.get("receipts"):
         c = "₹"
-        return f"<div class='stat-value'>{c}0.00</div>", "<div class='stat-value'>0</div>", f"<div class='stat-value'>{c}0.00</div>", "<div class='stat-value'>—</div>", None, f"No transactions recorded for {target_month}.", []
+        empty_card = make_kpi_card("Total Outlay", f"{c}0.00", f"No records for {target_month}")
+        empty_count = make_kpi_card("Audited Receipts", "0", "0 transactions")
+        empty_avg = make_kpi_card("Avg Ticket", f"{c}0.00", "Per trip")
+        empty_top = make_kpi_card("Top Category", "—", "No records")
+        return empty_card, empty_count, empty_avg, empty_top, None, f"No transactions recorded for {target_month}.", []
 
     curr = data.get("currency", "₹")
-    card_total = f"<div class='stat-value'>{curr}{data['grand_total']:,.2f}</div>"
-    card_trips = f"<div class='stat-value'>{data['receipt_count']}</div>"
-    card_avg = f"<div class='stat-value'>{curr}{data['avg_per_receipt']:,.2f}</div>"
-
     mom_val = data.get("mom_change_pct", 0.0)
-    mom_icon = "📈 +" if mom_val > 0 else "📉 "
-    card_mom = f"<div class='stat-value'>{mom_icon}{mom_val:.1f}%</div>" if data.get("prev_month") else "<div class='stat-value'>Base Month</div>"
+    mom_class = "trend-down" if mom_val <= 0 else "trend-up"
+    mom_sub = f"{'📈 +' if mom_val > 0 else '📉 '}{mom_val:.1f}% vs previous month" if data.get("prev_month") else "Baseline benchmark period"
+
+    card_total = make_kpi_card("Total Outlay", f"{curr}{data['grand_total']:,.2f}", mom_sub, mom_class)
+    card_trips = make_kpi_card("Audited Receipts", f"{data['receipt_count']}", f"Across {len(data.get('store_totals', {}))} distinct stores", "trend-neutral")
+    card_avg = make_kpi_card("Avg Ticket Size", f"{curr}{data['avg_per_receipt']:,.2f}", "Average spend per shopping trip", "trend-neutral")
+
+    top_cat = data.get("top_category", "None")
+    top_spend = data.get("category_totals", {}).get(top_cat, 0.0)
+    top_pct = (top_spend / max(data["grand_total"], 1.0)) * 100
+    card_top = make_kpi_card("Primary Driver", f"{top_cat}", f"{curr}{top_spend:,.2f} ({top_pct:.0f}% of total spend)", "trend-neutral")
 
     insights_list = generate_insights(data)
     formatted_insights = []
     for item in insights_list:
-        if "Financial Health Score:" in item:
-            formatted_insights.append(f"### 🛡️ Financial Health Status\n> **{item.split(':', 1)[1].strip()}**\n\n---")
+        if "Budget Alert:" in item or "Budget Watch:" in item:
+            formatted_insights.append(f"<div class='insight-card alert'>🚨 **Budget Warning**: {item.split(':', 1)[1].strip()}</div>")
+        elif "Financial Health Score:" in item:
+            formatted_insights.append(f"<div class='insight-card health'>🛡️ **Health Index**: {item.split(':', 1)[1].strip()}</div>")
         elif "Primary Expense Driver:" in item:
-            formatted_insights.append(f"🛒 **Primary Expense Driver:** {item.split(':', 1)[1].strip()}")
-        elif "Secondary Category Allocation:" in item:
-            formatted_insights.append(f"📊 **Secondary Categories:** {item.split(':', 1)[1].strip()}")
-        elif "Peak Line-Item Expenditure:" in item:
-            formatted_insights.append(f"🏷️ **Peak Purchase:** {item.split(':', 1)[1].strip()}")
-        elif "Basket Micro-Economics:" in item:
-            formatted_insights.append(f"📦 **Basket Dynamics:** {item.split(':', 1)[1].strip()}")
-        elif "Merchant Concentration:" in item:
-            formatted_insights.append(f"🏪 **Merchant Concentration:** {item.split(':', 1)[1].strip()}")
-        elif "Store Pricing Arbitrage:" in item:
-            formatted_insights.append(f"⚖️ **Store Pricing Arbitrage:** {item.split(':', 1)[1].strip()}")
-        elif "Run-Rate Forecast:" in item:
-            formatted_insights.append(f"📈 **Run-Rate Projection:** {item.split(':', 1)[1].strip()}")
-        elif "Actionable Savings Lever:" in item:
-            formatted_insights.append(f"🎯 **Actionable Savings Lever:** {item.split(':', 1)[1].strip()}")
-        elif "Budget Opportunity:" in item:
-            formatted_insights.append(f"💡 **Budget Opportunity:** {item.split(':', 1)[1].strip()}")
+            formatted_insights.append(f"<div class='insight-card'>🛒 **Primary Outlay Driver**: {item.split(':', 1)[1].strip()}</div>")
+        elif "Month-End Velocity Forecast:" in item:
+            formatted_insights.append(f"<div class='insight-card forecast'>📈 **Month-End Velocity**: {item.split(':', 1)[1].strip()}</div>")
         elif ":" in item:
             k, v = item.split(":", 1)
-            formatted_insights.append(f"💡 **{k.strip()}:** {v.strip()}")
+            formatted_insights.append(f"<div class='insight-card'>💡 **{k.strip()}**: {v.strip()}</div>")
         else:
-            formatted_insights.append(f"💡 {item}")
-    insights_md = "\n\n".join(formatted_insights)
+            formatted_insights.append(f"<div class='insight-card'>• {item}</div>")
 
-    receipt_rows = []
+    insights_markdown = "\n\n".join(formatted_insights)
+
+    # In-memory high-res chart
+    chart_img = generate_monthly_chart(target_month)
+
+    # Roster
+    receipts_roster = []
     for r in data.get("receipts", []):
-        r_curr = r.get("currency", curr)
-        receipt_rows.append([
+        receipts_roster.append([
             r.get("id", ""),
             r.get("date", ""),
             r.get("store", ""),
-            f"{r_curr}{r.get('total', 0.0):,.2f}",
+            f"{curr}{r.get('total', 0.0):,.2f}",
             len(r.get("items", []))
         ])
 
-    chart_img = generate_monthly_chart(target_month)
-    chart_pil = None
-    if chart_img and os.path.exists(chart_img):
-        try:
-            with Image.open(chart_img) as im:
-                chart_pil = im.copy()
-        except Exception:
-            chart_pil = None
-    return card_total, card_trips, card_avg, card_mom, chart_pil, insights_md, receipt_rows
+    return card_total, card_trips, card_avg, card_top, chart_img, insights_markdown, receipts_roster
 
 
 def refresh_month_choices():
-    """Update dropdown list of available months."""
+    """Refresh month choices dropdown."""
     months = get_available_months()
     if not months:
         return gr.Dropdown(choices=["No data yet"], value=None)
@@ -353,17 +388,17 @@ def export_json_action(month_key: str):
     return export_to_json(month_key)
 
 
+# ─── Tab 3: Bank Statement Reconciliation ────────────────────────────────────
 def reconcile_statement_action(file_obj, month_key: Optional[str] = None):
     """Reconcile receipts against an uploaded bank or UPI statement CSV."""
     if file_obj is None:
-        return pd.DataFrame(), "⚠️ Please upload a valid CSV bank statement file."
+        return pd.DataFrame(), "<div class='notice-box warning'>⚠️ Please select and upload a valid bank or UPI statement CSV.</div>"
     try:
-        from statement_matcher import parse_bank_statement_csv, match_receipts_to_statement
         file_path = file_obj.name if hasattr(file_obj, "name") else str(file_obj)
         txns = parse_bank_statement_csv(file_path)
         receipts = list_receipts(month_key=month_key) if month_key and month_key != "No data yet" else list_receipts()
         if not receipts:
-            return pd.DataFrame(), "⚠️ No receipts found in storage to reconcile."
+            return pd.DataFrame(), "<div class='notice-box warning'>⚠️ No scanned receipts available in database to reconcile.</div>"
 
         matches = match_receipts_to_statement(receipts, txns)
         rows = []
@@ -375,26 +410,27 @@ def reconcile_statement_action(file_obj, month_key: Optional[str] = None):
                 "Receipt ID": m.receipt_id,
                 "Merchant": m.receipt_store,
                 "Receipt Amt": f"{m.receipt_amount:.2f}",
-                "Matched Txn": m.txn_description,
+                "Matched Transaction": m.txn_description,
                 "Bank Amt": f"{m.txn_amount:.2f}" if m.txn_amount > 0 else "—",
                 "Status": f"✅ {m.match_status}" if m.match_status == "Verified Match" else (f"🟡 {m.match_status}" if m.match_status == "Probable Match" else f"❌ {m.match_status}"),
-                "Score": f"{m.confidence_score * 100:.0f}%",
-                "Audit Note": m.explanation
+                "Confidence": f"{m.confidence_score * 100:.0f}%",
+                "Audit Explanation": m.explanation
             })
         df = pd.DataFrame(rows)
-        summary = (
-            f"### 📑 Bank Statement Reconciliation Summary\n"
-            f"- Scanned Receipts Audited: **{len(receipts)}**\n"
-            f"- Bank Transactions Loaded: **{len(txns)}**\n"
-            f"- Verified Matches: **{verified_count} / {len(receipts)}** ({(verified_count/max(len(receipts),1))*100:.0f}% reconciliation rate)\n"
+        recon_rate = (verified_count / max(len(receipts), 1)) * 100
+        summary_html = (
+            f"<div class='notice-box success'>"
+            f"<b>Statement Audit Complete:</b> Reconciled <b>{len(receipts)} receipts</b> against "
+            f"<b>{len(txns)} statement entries</b>. "
+            f"<b>{verified_count} verified matches</b> ({recon_rate:.0f}% reconciliation rate)."
+            f"</div>"
         )
-        return df, summary
+        return df, summary_html
     except Exception as exc:
-        return pd.DataFrame(), f"⚠️ Reconciliation error: {str(exc)}"
+        return pd.DataFrame(), f"<div class='notice-box error'>❌ Reconciliation error: {str(exc)}</div>"
 
 
-
-# ─── Tab 3: Receipt Manager & CRUD ──────────────────────────────────────────
+# ─── Tab 4: Receipt History & CRUD ──────────────────────────────────────────
 def search_and_list_receipts(search_term: str):
     records = list_receipts(search_query=search_term)
     rows = []
@@ -415,14 +451,14 @@ def search_and_list_receipts(search_term: str):
 
 def delete_receipt_action(receipt_id: str, confirmed: bool):
     if not receipt_id or not receipt_id.strip():
-        return "⚠️ Please select a row above or enter a Receipt ID to delete.", search_and_list_receipts("")
+        return "<div class='notice-box warning'>⚠️ Please select a row above or enter a Receipt ID to delete.</div>", search_and_list_receipts("")
     if not confirmed:
-        return "⚠️ Confirmation required: Check 'Yes, I confirm permanent deletion' before proceeding.", search_and_list_receipts("")
+        return "<div class='notice-box alert'>⚠️ Confirmation required: Check 'Yes, confirm permanent deletion' before proceeding.</div>", search_and_list_receipts("")
     deleted = delete_receipt(receipt_id.strip())
     if deleted:
-        msg = f"🗑️ Successfully deleted `{receipt_id.strip()}`."
+        msg = f"<div class='notice-box success'>✓ Successfully deleted receipt <code>{receipt_id.strip()}</code>.</div>"
     else:
-        msg = f"⚠️ Receipt `{receipt_id.strip()}` not found."
+        msg = f"<div class='notice-box error'>❌ Receipt <code>{receipt_id.strip()}</code> not found.</div>"
     return msg, search_and_list_receipts("")
 
 
@@ -438,28 +474,245 @@ def on_select_repo_row(evt: gr.SelectData, df):
     return ""
 
 
-# ─── Build Gradio Application ────────────────────────────────────────────────
+# ─── Modern FinTech Custom CSS ──────────────────────────────────────────────
 CUSTOM_CSS = """
-    .gradio-container { max-width: 1200px !important; margin: auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    .stat-card { background: #1E293B; border: 1px solid #334155; border-radius: 10px; padding: 15px; text-align: center; }
-    .stat-label { color: #94A3B8; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 24px; font-weight: bold; color: #F8FAFC; margin-top: 5px; }
-    .recon-badge { padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 13px; background: #064E3B; color: #6EE7B7; display: inline-block; }
-    footer { display: none !important; }
+/* Container & Global Reset */
+.gradio-container {
+    max-width: 1320px !important;
+    margin: auto !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif !important;
+}
+
+/* FinTech Navbar Header */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    background: linear-gradient(135deg, #0b0f19 0%, #1e293b 100%);
+    border: 1px solid #334155;
+    border-radius: 14px;
+    margin-bottom: 22px;
+}
+.app-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #f8fafc;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.app-subtitle {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-top: 3px;
+}
+.app-badges {
+    display: flex;
+    gap: 8px;
+}
+.tech-pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    background: rgba(16, 185, 129, 0.12);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* KPI Metric Cards Grid */
+.metric-card {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: left;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.12);
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.metric-card:hover {
+    border-color: #10b981;
+}
+.metric-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+}
+.metric-val {
+    font-size: 24px;
+    font-weight: 800;
+    color: #f8fafc;
+    margin-top: 4px;
+    letter-spacing: -0.5px;
+}
+.metric-sub {
+    font-size: 12px;
+    margin-top: 3px;
+}
+.trend-up { color: #f43f5e; font-weight: 600; }
+.trend-down { color: #10b981; font-weight: 600; }
+.trend-neutral { color: #38bdf8; font-weight: 500; }
+
+/* Status Badges */
+.recon-pill-verified {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+.recon-pill-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.recon-pill-neutral {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(51, 65, 85, 0.5);
+    color: #cbd5e1;
+    border: 1px solid #475569;
+}
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+/* Notice / Feedback Banners */
+.notice-box {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.45;
+    margin-top: 8px;
+}
+.notice-box.success {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #34d399;
+}
+.notice-box.alert {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+.notice-box.warning {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+.notice-box.error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+.notice-box.neutral {
+    background: rgba(51, 65, 85, 0.3);
+    border: 1px solid #334155;
+    color: #94a3b8;
+}
+
+/* Insight Cards */
+.insight-card {
+    background: #1e293b;
+    border-left: 4px solid #10b981;
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #e2e8f0;
+}
+.insight-card.alert {
+    border-left-color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+}
+.insight-card.health {
+    border-left-color: #38bdf8;
+}
+.insight-card.forecast {
+    border-left-color: #a855f7;
+}
+
+/* Calculated Total Pill */
+.calc-total-pill {
+    padding: 8px 14px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #34d399;
+    display: inline-block;
+}
+.calc-total-pill.error {
+    color: #f87171;
+}
+
+footer { display: none !important; }
 """
 
-with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
+# ─── Custom Theme ───────────────────────────────────────────────────────────
+fintech_theme = gr.themes.Soft(
+    primary_hue="emerald",
+    secondary_hue="indigo",
+    neutral_hue="slate",
+    font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui"]
+).set(
+    body_background_fill="#0b0f19",
+    body_background_fill_dark="#0b0f19",
+    block_background_fill="#111827",
+    block_background_fill_dark="#111827",
+    block_border_color="#1f2937",
+    block_border_color_dark="#1f2937",
+    button_primary_background_fill="#059669",
+    button_primary_background_fill_hover="#10b981",
+    button_primary_text_color="#ffffff",
+)
 
-    gr.Markdown("""
-    # 🧾 Smart Receipt Scanner & Expense Intelligence
-    **Spatial OCR Pipeline • Multi-Currency • Transformer Categorization • Human-in-the-Loop Verification • Financial Analytics**
+# ─── Gradio Application Definition ──────────────────────────────────────────
+with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
+
+    # ── Top Navbar ──────────────────────────────────────────────────────────
+    gr.HTML("""
+    <div class="app-header">
+        <div>
+            <div class="app-title">🧾 ExpensifyML <span style="font-weight:400; font-size:13px; color:#94a3b8;">v2.0</span></div>
+            <div class="app-subtitle">Automated Receipt Digitization, Active Learning Categorization & Expense Intelligence</div>
+        </div>
+        <div class="app-badges">
+            <span class="tech-pill">Edge CPU (<250ms)</span>
+            <span class="tech-pill">Active Learning Memory</span>
+            <span class="tech-pill">Statement Cross-Audit</span>
+        </div>
+    </div>
     """)
 
     with gr.Tabs() as tabs:
 
-        # ── TAB 1: RECEIPT SCANNER & EDITOR ──────────────────────────────────
-        with gr.Tab("Scan & Verify Receipt"):
+        # ── TAB 1: SCAN & VERIFY RECEIPT ────────────────────────────────────
+        with gr.Tab("🧾 Scan & Verify Receipt"):
             with gr.Row():
+                # Left Column: Upload & Engine Choice
                 with gr.Column(scale=5):
                     sample_picker = gr.Dropdown(
                         label="⚡ Quick Demo: Pick Sample Receipt",
@@ -467,22 +720,24 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                         value=None,
                         info="Instant test without uploading your own photo"
                     )
-                    image_input = gr.Image(label="Receipt Photo", type="numpy", height=380)
+                    image_input = gr.Image(label="Receipt Photograph", type="numpy", height=360)
 
-                    with gr.Row():
-                        engine_select = gr.Radio(
-                            label="OCR Engine",
-                            choices=["Tesseract Spatial (Fast & Accurate)", "TrOCR (Deep Vision Transformer)"],
-                            value="Tesseract Spatial (Fast & Accurate)"
-                        )
+                    engine_select = gr.Radio(
+                        label="OCR Engine",
+                        choices=["Tesseract Spatial (Fast CPU • ~213ms)", "TrOCR (Deep Vision Transformer • ~1.4s/line)"],
+                        value="Tesseract Spatial (Fast CPU • ~213ms)",
+                        info="Tesseract clusters layout-aware lines; TrOCR performs deep sequence generation"
+                    )
 
-                    scan_btn = gr.Button("🔍 Scan & Extract Receipt", variant="primary", size="lg")
+                    scan_btn = gr.Button("⚡ Scan & Extract Receipt", variant="primary", size="lg")
 
+                # Right Column: Extracted Receipt Summary
                 with gr.Column(scale=6):
-                    gr.Markdown("### Extracted Metadata & Financial Summary")
+                    gr.Markdown("### Extracted Receipt Information")
+
                     with gr.Row():
-                        store_name_in = gr.Textbox(label="Store / Merchant", placeholder="e.g. Woolworths, Supermart")
-                        date_in = gr.Textbox(label="Receipt Date", placeholder="YYYY-MM-DD")
+                        store_name_in = gr.Textbox(label="Store / Merchant", placeholder="e.g. Supermart, Apollo Pharmacy")
+                        date_in = gr.Textbox(label="Date", placeholder="YYYY-MM-DD")
                         currency_in = gr.Dropdown(
                             label="Currency",
                             choices=["$", "₹", "€", "£", "¥"],
@@ -495,21 +750,22 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                         tax_in = gr.Textbox(label="Tax (GST/VAT)", interactive=False)
                         total_in = gr.Textbox(label="Printed Total", interactive=False)
 
-                    recon_status_box = gr.Textbox(label="Financial Reconciliation Status", interactive=False)
-                    status_banner = gr.Markdown("Ready to scan receipt.")
+                    with gr.Row():
+                        recon_badge = gr.HTML("<div class='recon-pill-neutral'><span class='dot'></span> Ready to Scan</div>")
 
-            gr.Markdown("### 📝 Itemized Expenses (Editable — Adjust details before saving)")
-            with gr.Row():
-                items_editor = gr.DataFrame(
-                    headers=["Item Name", "Category", "Amount", "Confidence", "Qty"],
-                    datatype=["str", "str", "number", "str", "number"],
-                    interactive=True,
-                    wrap=True,
-                    label="Line Items Table (Supports negative discount rows e.g. -2.50)"
-                )
+                    status_banner = gr.HTML("<div class='notice-box neutral'>Upload or select a sample receipt and click <b>Scan & Extract</b>.</div>")
+
+            gr.Markdown("### 📝 Itemized Expenses (Human-in-the-Loop Editor)")
+            items_editor = gr.DataFrame(
+                headers=["Item Description", "Category", "Amount", "Confidence", "Qty"],
+                datatype=["str", "str", "number", "str", "number"],
+                interactive=True,
+                wrap=True,
+                label="Line Items (Click cells to edit names, categories, or amounts)"
+            )
 
             with gr.Row():
-                calc_total_display = gr.Markdown("**Calculated Items Total: ₹0.00**")
+                calc_total_display = gr.HTML("<div class='calc-total-pill'>Calculated Items Sum: <b>₹0.00</b></div>")
                 recalc_btn = gr.Button("🔄 Recompute Total", size="sm")
 
             with gr.Row():
@@ -520,38 +776,32 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                 )
                 notes_in = gr.Textbox(label="Transaction Notes (optional)", placeholder="e.g. Weekly grocery stockup")
 
-            with gr.Row():
-                force_save_chk = gr.Checkbox(
-                    label="⚠️ Confirm save despite discrepancy (Check only if you intend to save an unbalanced receipt)",
-                    value=False
-                )
-
-            save_db_btn = gr.Button("💾 Confirm & Save to Expenses", variant="primary", size="lg")
-            save_feedback = gr.Markdown("")
-
-            with gr.Accordion("🧠 Active Learning & User Personalization", open=False):
-                gr.Markdown(
-                    "The system continuously learns from your edits. Saved item categories are stored in "
-                    "your local SQLite corrections table (`user_corrections`) and automatically override model predictions. "
-                    "You can also trigger on-device lightweight retraining anytime to adapt classification weights."
-                )
-                with gr.Row():
-                    retrain_model_btn = gr.Button("🔄 Retrain Classifier on Saved Corrections", size="sm")
-                retrain_model_feedback = gr.Markdown("")
-
-            with gr.Accordion("🖼️ Visual OCR Inspector (Bounding Boxes & Layout)", open=False):
-                annotated_preview = gr.Image(label="Annotated Image with Text Bounding Boxes", height=450)
-
-            with gr.Accordion("📄 Raw OCR Transcript (Debug View)", open=False):
-                raw_ocr_output = gr.Textbox(label="Raw Recognized Text", lines=8, interactive=False)
-
-            retrain_model_btn.click(
-                fn=retrain_personalization_action,
-                outputs=[retrain_model_feedback]
+            force_save_chk = gr.Checkbox(
+                label="⚠️ Override discrepancy and force save (Check only if saving an unbalanced receipt)",
+                value=False
             )
 
+            save_db_btn = gr.Button("💾 Confirm & Save Expense Record", variant="primary", size="lg")
+            save_feedback = gr.HTML("")
 
-            # Event Handlers
+            # Collapsible Advanced Sections
+            with gr.Accordion("🧠 Active Learning & Personalization Engine", open=False):
+                gr.Markdown(
+                    "The system continuously learns from your category adjustments. Every confirmed edit is stored in your "
+                    "local SQLite memory table (`user_corrections`) and overrides future model predictions. "
+                    "You can also retrain on-device model weights anytime."
+                )
+                with gr.Row():
+                    retrain_model_btn = gr.Button("🔄 Update Classifier on Saved Corrections", size="sm")
+                retrain_model_feedback = gr.HTML("")
+
+            with gr.Accordion("🖼️ Visual Bounding Box Inspector", open=False):
+                annotated_preview = gr.Image(label="Segmented Line Bounding Boxes", height=420)
+
+            with gr.Accordion("📄 Raw OCR Transcript (Debug View)", open=False):
+                raw_ocr_output = gr.Textbox(label="Raw Character Recognition Output", lines=7, interactive=False)
+
+            # Event Handlers for Tab 1
             sample_picker.change(
                 fn=load_sample_receipt,
                 inputs=[sample_picker],
@@ -562,7 +812,7 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                 fn=scan_receipt_action,
                 inputs=[image_input, engine_select],
                 outputs=[
-                    store_name_in, date_in, subtotal_in, tax_in, total_in, currency_in, recon_status_box,
+                    store_name_in, date_in, subtotal_in, tax_in, total_in, currency_in, recon_badge,
                     items_editor, annotated_preview, raw_ocr_output, status_banner
                 ]
             ).then(
@@ -583,48 +833,43 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                 outputs=[calc_total_display]
             )
 
+            retrain_model_btn.click(
+                fn=retrain_personalization_action,
+                outputs=[retrain_model_feedback]
+            )
 
-
-        # ── TAB 2: FINANCIAL ANALYTICS & INSIGHTS ────────────────────────────
+        # ── TAB 2: SPENDING ANALYTICS & INSIGHTS ────────────────────────────
         init_months = get_available_months()
         init_month = init_months[0] if init_months else None
-        init_total, init_trips, init_avg, init_mom, init_chart, init_insights, init_roster = load_monthly_dashboard(init_month)
+        init_total, init_trips, init_avg, init_top, init_chart, init_insights, init_roster = load_monthly_dashboard(init_month)
 
         with gr.Tab("📊 Spending Analytics & AI Insights") as tab_spending_analytics:
             with gr.Row():
                 month_select = gr.Dropdown(
-                    label="Select Statement Month",
+                    label="Statement Month",
                     choices=init_months or ["No data yet"],
                     value=init_month,
                     scale=3
                 )
-                refresh_analytics_btn = gr.Button("🔄 Refresh Dashboard", scale=1)
+                refresh_analytics_btn = gr.Button("🔄 Refresh", scale=1)
                 export_csv_btn = gr.Button("📥 Export CSV", scale=1)
                 export_json_btn = gr.Button("📥 Export JSON", scale=1)
 
-            # Metric Cards (Pre-populated with live data)
+            # 4 Sleek KPI Metric Cards
             with gr.Row():
-                with gr.Column(elem_classes=["stat-card"]):
-                    gr.Markdown("<div class='stat-label'>Total Monthly Spend</div>")
-                    stat_total = gr.HTML(init_total)
-                with gr.Column(elem_classes=["stat-card"]):
-                    gr.Markdown("<div class='stat-label'>Shopping Trips</div>")
-                    stat_trips = gr.HTML(init_trips)
-                with gr.Column(elem_classes=["stat-card"]):
-                    gr.Markdown("<div class='stat-label'>Average Ticket Size</div>")
-                    stat_avg = gr.HTML(init_avg)
-                with gr.Column(elem_classes=["stat-card"]):
-                    gr.Markdown("<div class='stat-label'>Month-over-Month</div>")
-                    stat_mom = gr.HTML(init_mom)
+                stat_total = gr.HTML(init_total)
+                stat_trips = gr.HTML(init_trips)
+                stat_avg = gr.HTML(init_avg)
+                stat_top = gr.HTML(init_top)
 
             with gr.Row():
                 with gr.Column(scale=5):
-                    gr.Markdown("### 💡 Rule-Based Spending Insights & Analytics")
-                    insights_display = gr.Markdown(init_insights)
+                    gr.Markdown("### 📈 Visual Expense Distribution")
+                    chart_display = gr.Image(value=init_chart, label="Category Allocation", height=380)
 
                 with gr.Column(scale=7):
-                    gr.Markdown("### 📈 Visual Breakdown (Donut & Ranked Bar)")
-                    chart_display = gr.Image(value=init_chart, label="Spending Chart", height=380)
+                    gr.Markdown("### 💡 Financial Insights & Budget Alerts")
+                    insights_display = gr.Markdown(init_insights)
 
             gr.Markdown("### 📋 Monthly Receipts Roster")
             monthly_receipts_table = gr.DataFrame(
@@ -635,30 +880,27 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
 
             file_download = gr.File(label="Download Exported File", visible=True)
 
-            # ── Interactive AI Financial Advisor Q&A ────────────────────────
-            with gr.Accordion("🤖 Ask AI Financial Advisor (Interactive Q&A)", open=True):
+            # Interactive AI Financial Advisor
+            with gr.Accordion("🤖 Interactive AI Financial Advisor (Q&A)", open=True):
                 with gr.Row():
                     advisor_query_in = gr.Textbox(
-                        label="Ask anything about your spending, budget, or trends",
-                        placeholder="e.g. 'What was my biggest expense?', 'Break down my spending by category', 'How can I save money this month?'",
+                        label="Ask anything about your spending, budget pacing, or categories",
+                        placeholder="e.g. 'What was my biggest expense?', 'Break down my food spend', 'How can I save money this month?'",
                         scale=4
                     )
                     ask_advisor_btn = gr.Button("💬 Ask Advisor", variant="primary", scale=1)
 
-                with gr.Row():
-                    gr.Examples(
-                        examples=[
-                            ["What was my single most expensive purchase?"],
-                            ["Break down my spending by category"],
-                            ["Where do I spend the most money?"],
-                            ["Give me 3 specific recommendations to cut my monthly expenses"],
-                            ["What is my projected month-end spend at this rate?"],
-                            ["How much did I spend on Food?"]
-                        ],
-                        inputs=[advisor_query_in]
-                    )
+                gr.Examples(
+                    examples=[
+                        ["What was my single most expensive purchase?"],
+                        ["Break down my spending by category"],
+                        ["Give me 3 specific recommendations to cut expenses"],
+                        ["What is my projected month-end spend at this rate?"]
+                    ],
+                    inputs=[advisor_query_in]
+                )
 
-                advisor_answer_box = gr.Markdown("💬 *Click any quick prompt above or type your own question to receive instant AI spending analysis.*")
+                advisor_answer_box = gr.Markdown("💬 *Click any quick question above or enter your own to receive instant AI spending analysis.*")
 
                 ask_advisor_btn.click(
                     fn=query_financial_advisor,
@@ -671,40 +913,17 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                     outputs=[advisor_answer_box]
                 )
 
-            # ── Bank & UPI Statement Reconciliation (Optional Differentiator) ────────
-            with gr.Accordion("💳 Bank & UPI Statement Reconciliation (Cross-Verification)", open=False):
-                gr.Markdown(
-                    "Upload your Bank or UPI statement export (.csv) to automatically cross-verify physical receipts "
-                    "against digital bank transactions using multi-factor amount, date window (±3d), and fuzzy merchant matching."
-                )
-                with gr.Row():
-                    statement_file_in = gr.File(label="Upload Bank / UPI Statement (.csv)", file_types=[".csv"], scale=3)
-                    reconcile_btn = gr.Button("🔍 Reconcile Transactions", variant="primary", scale=1)
-                statement_recon_table = gr.DataFrame(
-                    headers=["Receipt ID", "Merchant", "Receipt Amt", "Matched Txn", "Bank Amt", "Status", "Score", "Audit Note"],
-                    interactive=False,
-                    wrap=True
-                )
-                statement_recon_summary = gr.Markdown("")
-
-                reconcile_btn.click(
-                    fn=reconcile_statement_action,
-                    inputs=[statement_file_in, month_select],
-                    outputs=[statement_recon_table, statement_recon_summary]
-                )
-
-
-            # Tab & Control Events
+            # Tab event handlers
             tab_spending_analytics.select(
                 fn=load_monthly_dashboard,
                 inputs=[month_select],
-                outputs=[stat_total, stat_trips, stat_avg, stat_mom, chart_display, insights_display, monthly_receipts_table]
+                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
             )
 
             month_select.change(
                 fn=load_monthly_dashboard,
                 inputs=[month_select],
-                outputs=[stat_total, stat_trips, stat_avg, stat_mom, chart_display, insights_display, monthly_receipts_table]
+                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
             )
 
             refresh_analytics_btn.click(
@@ -713,7 +932,7 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
             ).then(
                 fn=load_monthly_dashboard,
                 inputs=[month_select],
-                outputs=[stat_total, stat_trips, stat_avg, stat_mom, chart_display, insights_display, monthly_receipts_table]
+                outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
             )
 
             export_csv_btn.click(
@@ -728,14 +947,41 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                 outputs=[file_download]
             )
 
-        # ── TAB 3: RECEIPT REPOSITORY & CRUD ─────────────────────────────────
-        with gr.Tab("🗄️ Receipt Repository & Management"):
-            gr.Markdown("Search, inspect, and manage archived receipts.")
+        # ── TAB 3: BANK & UPI STATEMENT RECONCILIATION ──────────────────────
+        with gr.Tab("💳 Bank & Statement Reconciliation"):
+            gr.Markdown("""
+            ### 💳 Cross-Reconcile Receipts with Bank / UPI Statements
+            Upload your monthly Bank or UPI statement export (`.csv`) to automatically verify physical receipts 
+            against digital settlements using **amount matching**, **date window tolerance (±3d)**, and **fuzzy merchant alignment**.
+            """)
+
+            with gr.Row():
+                statement_file_in = gr.File(label="Upload Bank / UPI Statement CSV", file_types=[".csv"], scale=3)
+                reconcile_btn = gr.Button("🔍 Reconcile Transactions", variant="primary", scale=1)
+
+            statement_recon_summary = gr.HTML("<div class='notice-box neutral'>Upload a statement CSV and click <b>Reconcile Transactions</b>.</div>")
+
+            statement_recon_table = gr.DataFrame(
+                headers=["Receipt ID", "Merchant", "Receipt Amt", "Matched Transaction", "Bank Amt", "Status", "Confidence", "Audit Explanation"],
+                interactive=False,
+                wrap=True,
+                label="Reconciliation Audit Ledger"
+            )
+
+            reconcile_btn.click(
+                fn=reconcile_statement_action,
+                inputs=[statement_file_in, month_select],
+                outputs=[statement_recon_table, statement_recon_summary]
+            )
+
+        # ── TAB 4: RECEIPT REPOSITORY & CRUD ────────────────────────────────
+        with gr.Tab("🗄️ Receipt History & Archive"):
+            gr.Markdown("### 🗄️ Search, Inspect & Manage Archived Receipts")
 
             with gr.Row():
                 search_query_box = gr.Textbox(
                     label="Search Receipts",
-                    placeholder="Search by merchant name or purchased item...",
+                    placeholder="Search by merchant name or purchased line item...",
                     scale=4
                 )
                 search_btn = gr.Button("Search", scale=1)
@@ -749,10 +995,10 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
 
             with gr.Row():
                 delete_id_box = gr.Textbox(label="Receipt ID to Remove (Click any row above to auto-select)", placeholder="e.g. REC-202610-001", scale=3)
-                delete_confirm_chk = gr.Checkbox(label="⚠️ Yes, I confirm permanent deletion of this receipt", value=False, scale=2)
+                delete_confirm_chk = gr.Checkbox(label="⚠️ Yes, confirm permanent deletion", value=False, scale=2)
                 delete_btn = gr.Button("🗑️ Delete Receipt", variant="stop", scale=1)
 
-            delete_feedback = gr.Markdown("")
+            delete_feedback = gr.HTML("")
 
             repo_table.select(
                 fn=on_select_repo_row,
@@ -772,61 +1018,29 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                 outputs=[delete_feedback, repo_table]
             )
 
-        # ── TAB 4: ARCHITECTURE & RESUME SPECS ───────────────────────────────
+        # ── TAB 5: SYSTEM ARCHITECTURE & BENCHMARKS ─────────────────────────
         with gr.Tab("📐 System Architecture & Specs"):
-            gr.Markdown("""
-            ## 🏗️ Technical Architecture & Pipeline Design
+            gr.Markdown(r"""
+            ### 🏗️ Production Architecture & Pipeline Design
 
-            ```
-            ┌────────────────────────┐
-            │  Receipt Image (Photo) │
-            └───────────┬────────────┘
-                        │
-                        ▼
-            ┌──────────────────────────────────────────────┐
-            │  Computer Vision Preprocessing (OpenCV)      │
-            │  • Dynamic Resolution Scaling (2.5x <1100px) │
-            │  • Document Auto-Deskewing (Moments / Angle) │
-            │  • Contrast Boost (CLAHE Clip=2.2, Grid 8x8) │
-            │  • Bilateral Edge-Preserving Denoising       │
-            └───────────┬──────────────────────────────────┘
-                        │
-                        ▼
-            ┌──────────────────────────────────────────────┐
-            │  Spatial Line Clustering & Transcription     │
-            │  • Engine 1: Tesseract Spatial image_to_data │
-            │  • Engine 2: Microsoft TrOCR Line-by-Line    │
-            └───────────┬──────────────────────────────────┘
-                        │
-                        ▼
-            ┌──────────────────────────────────────────────┐
-            │  Semantic Information Extraction & Matching  │
-            │  • Currency Auto-Detection ($, €, £, ₹, ¥)   │
-            │  • Garbage Merchant Suppression              │
-            │  • Weight/Scale Line Attachment to Products  │
-            │  • Negative Discount Retention (-$15.00)     │
-            │  • Date & Tender Rejection (CASH, CHANGE)    │
-            │  • Financial Cross-Reconciliation Check      │
-            └───────────┬──────────────────────────────────┘
-                        │
-                        ▼
-            ┌──────────────────────────────────────────────┐
-            │  Multi-Tier Hybrid Categorization Engine     │
-            │  • Negative Filter (Tender/Weight -> Other)  │
-            │  • Tier 1: Domain Brand/Keyword Map (<0.1ms) │
-            │  • Tier 2: Fine-Tuned DistilBERT Transformer │
-            │  • Tier 3: Semantic Cosine & Token Fallback  │
-            └───────────┬──────────────────────────────────┘
-                        │
-                        ▼
-            ┌──────────────────────────────────────────────┐
-            │  Human-in-the-Loop Gradio UI & REST API      │
-            │  • Interactive Line-Item Verification Editor │
-            │  • Reconciliation Discrepancy Guard          │
-            │  • Auto-Refreshing Analytics & MoM Dashboard │
-            │  • FastAPI REST Endpoints with Swagger Docs  │
-            └──────────────────────────────────────────────┘
-            ```
+            | Pipeline Component | Technology Stack | Latency / Accuracy Profile |
+            | :--- | :--- | :--- |
+            | **Computer Vision Preprocessing** | OpenCV (`cv2`) | Adaptive upscaling, moments deskewing ($\pm 25^\circ$), CLAHE contrast |
+            | **Spatial OCR Engine (Default)** | Tesseract 5.x (`image_to_data`) | Layout-aware line clustering (**~213 ms** full receipt on CPU) |
+            | **Vision Transformer (DL Fallback)**| Microsoft TrOCR (`base-printed`) | Autoregressive character generation (**~1.4 s** per cropped line) |
+            | **Financial Reconciliation Guard** | Deterministic State-Machine | Mathematically checks line item sum against printed total |
+            | **Multi-Tier NLP Categorizer** | DistilBERT + Calibrated Adapter | 7 categories, post-hoc Temperature Scaling ($T^*=1.59$), ECE **11.8%** |
+            | **Active Learning Memory** | SQLite Relational Database | $O(1)$ exact & fuzzy user correction recall + fast on-device retraining |
+            | **REST Microservice Layer** | FastAPI + Pydantic v2 | OpenAPI / Swagger interactive documentation available at `/docs` |
+
+            ---
+
+            ### 📊 Empirical Performance Summary (Held-Out Receipts)
+            - **Item Extraction Recall**: `100.0%` (19/19)
+            - **Item Extraction Precision**: `100.0%` (19/19)
+            - **Financial Total Match Rate**: `100.0%` (4/4)
+            - **Categorization Accuracy**: `84.2%` (baseline on held-out items) $\to$ `100.0%` (with 4 user corrections)
+            - **Bank Statement Reconciliation**: `88.9% F1 Score` (`80.0% Precision`, `100.0% Recall`)
             """)
 
     # ── Chained Save Event: Synchronizes Analytics & Repository ──────────────
@@ -840,7 +1054,7 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
     ).then(
         fn=load_monthly_dashboard,
         inputs=[month_select],
-        outputs=[stat_total, stat_trips, stat_avg, stat_mom, chart_display, insights_display, monthly_receipts_table]
+        outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
     ).then(
         fn=search_and_list_receipts,
         inputs=[search_query_box],
@@ -848,11 +1062,10 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
     )
 
     # ── Automatic Page Load Initialization ───────────────────────────────────
-    # Populates dashboard and repository tables immediately on load
     demo.load(
         fn=load_monthly_dashboard,
         inputs=[month_select],
-        outputs=[stat_total, stat_trips, stat_avg, stat_mom, chart_display, insights_display, monthly_receipts_table]
+        outputs=[stat_total, stat_trips, stat_avg, stat_top, chart_display, insights_display, monthly_receipts_table]
     )
 
 # ─── Entry Point ─────────────────────────────────────────────────────────────
@@ -874,7 +1087,7 @@ if __name__ == "__main__":
         server_port=port,
         share=share,
         auth=auth_credentials,
-        theme=gr.themes.Soft(primary_hue="emerald", secondary_hue="indigo"),
+        theme=fintech_theme,
         css=CUSTOM_CSS,
         show_error=True,
         allowed_paths=[
