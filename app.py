@@ -71,41 +71,41 @@ def load_sample_receipt(sample_name: str):
 def make_recon_badge(status_text: str, diff: float = 0.0, curr: str = "₹") -> str:
     """Generate modern HTML pill for financial reconciliation status."""
     if "Verified" in status_text:
-        return f"<div class='recon-pill-verified'><span class='dot'></span> Verified Match • Items sum matches printed total</div>"
+        return f"<div class='recon-pill-verified'>Verified Match: Items sum matches printed total</div>"
     elif "Discrepancy" in status_text:
-        return f"<div class='recon-pill-warning'><span class='dot'></span> Discrepancy • {curr}{diff:.2f} variance vs printed total</div>"
+        return f"<div class='recon-pill-warning'>Discrepancy: {curr}{diff:.2f} variance vs printed total</div>"
     else:
-        return f"<div class='recon-pill-neutral'><span class='dot'></span> {status_text}</div>"
+        return f"<div class='recon-pill-neutral'>{status_text}</div>"
 
 
 # ─── Tab 1: Scanning & Line-Item Verification ────────────────────────────────
-def scan_receipt_action(image, engine_choice: str, categorizer_choice: str = "Hybrid Multi-Tier (Rules + Memory + DistilBERT)"):
+def scan_receipt_action(image, engine_choice: str, categorizer_choice: str = "Hybrid Multi-Tier"):
     """
     Perform end-to-end receipt extraction with currency and metadata extraction.
     """
     if image is None:
-        empty_badge = "<div class='recon-pill-neutral'><span class='dot'></span> Ready to Scan</div>"
+        empty_badge = "<div class='recon-pill-neutral'>Ready to Scan</div>"
         empty_df = pd.DataFrame(columns=["Item Description", "Category", "Amount", "Confidence", "Qty"])
-        empty_msg = "<div class='notice-box neutral'>ℹ️ Please upload a receipt photo or select a quick demo sample.</div>"
+        empty_msg = "<div class='notice-box neutral'>Upload a receipt photograph and select Scan Receipt.</div>"
         return "", "", "", "", "", "₹", empty_badge, empty_df, None, "", empty_msg
 
     pil_img = Image.fromarray(image) if not isinstance(image, Image.Image) else image
-    use_trocr = ("Vision Transformer" in engine_choice)
+    use_trocr = ("Vision Transformer" in engine_choice or "TrOCR" in engine_choice)
 
     try:
         raw_items, raw_text, meta, annotated_img = extract_receipt_items(pil_img, use_trocr=use_trocr)
     except Exception as exc:
-        err_badge = "<div class='recon-pill-warning'><span class='dot'></span> Extraction Error</div>"
+        err_badge = "<div class='recon-pill-warning'>Extraction Error</div>"
         err_df = pd.DataFrame(columns=["Item Description", "Category", "Amount", "Confidence", "Qty"])
-        err_msg = f"<div class='notice-box error'>❌ <b>OCR Error:</b> {str(exc)}</div>"
+        err_msg = f"<div class='notice-box error'><b>OCR Error:</b> {str(exc)}</div>"
         return "", "", "", "", "", "₹", err_badge, err_df, None, "", err_msg
 
     curr = meta.get("currency", "₹")
 
     if not raw_items:
-        no_items_badge = "<div class='recon-pill-warning'><span class='dot'></span> No Items Detected</div>"
+        no_items_badge = "<div class='recon-pill-warning'>No Items Detected</div>"
         empty_df = pd.DataFrame(columns=["Item Description", "Category", "Amount", "Confidence", "Qty"])
-        warn_msg = "<div class='notice-box warning'>⚠️ No line items detected. Check image focus, lighting, or orientation.</div>"
+        warn_msg = "<div class='notice-box warning'>No line items detected. Check image focus, lighting, or orientation.</div>"
         return (
             meta.get("store_name", ""), meta.get("date", ""), "", "", "", curr,
             no_items_badge, empty_df, annotated_img, raw_text, warn_msg
@@ -118,16 +118,16 @@ def scan_receipt_action(image, engine_choice: str, categorizer_choice: str = "Hy
     except Exception:
         categorized = raw_items
 
-    # Build editable DataFrame with Active Learning highlighting (<70% confidence)
+    # Build editable DataFrame with confidence review highlighting (<70% confidence)
     rows = []
     low_conf_count = 0
     for it in categorized:
         conf_raw = float(it.get('confidence', 0.90))
         if conf_raw < 0.70:
             low_conf_count += 1
-            conf_str = f"⚠️ {conf_raw*100:.0f}% (Review)"
+            conf_str = f"{conf_raw*100:.0f}% (Review)"
         else:
-            conf_str = f"✅ {conf_raw*100:.0f}%"
+            conf_str = f"{conf_raw*100:.0f}%"
 
         rows.append({
             "Item Description": it.get("item_name", ""),
@@ -152,20 +152,20 @@ def scan_receipt_action(image, engine_choice: str, categorizer_choice: str = "Hy
     if low_conf_count > 0:
         status_html = (
             f"<div class='notice-box alert'>"
-            f"⚠️ <b>Active Learning Alert:</b> Extracted {len(categorized)} items ({curr}). "
-            f"<b>{low_conf_count} item(s)</b> have confidence &lt;70% and are flagged for review."
+            f"<b>Review Recommended:</b> Extracted {len(categorized)} items ({curr}). "
+            f"<b>{low_conf_count} item(s)</b> have confidence &lt;70%."
             f"</div>"
         )
     elif not store:
         status_html = (
             f"<div class='notice-box warning'>"
-            f"ℹ️ Extracted {len(categorized)} items ({curr}). Merchant name was unclear — please verify Store Name before saving."
+            f"Extracted {len(categorized)} items ({curr}). Verify merchant name before saving."
             f"</div>"
         )
     else:
         status_html = (
             f"<div class='notice-box success'>"
-            f"✓ Extracted <b>{len(categorized)} items ({curr})</b> from <b>{store}</b> successfully. Review and edit before archiving."
+            f"Extracted <b>{len(categorized)} items ({curr})</b> from <b>{store}</b>. Review item details before saving."
             f"</div>"
         )
 
@@ -175,7 +175,7 @@ def scan_receipt_action(image, engine_choice: str, categorizer_choice: str = "Hy
 def test_distilbert_action(item_text: str) -> str:
     """Interactive sandbox tester for DistilBERT sequence classifier."""
     if not item_text or not item_text.strip():
-        return "<div class='notice-box neutral'>Enter any product description (e.g. <i>'Organic Whole Wheat Bread'</i> or <i>'Uber Trip Fare'</i>) to test DistilBERT.</div>"
+        return "<div class='notice-box neutral'>Enter an item description to test classification.</div>"
     try:
         res = predict_with_distilbert(item_text)
         top3_rows = "".join(
@@ -187,7 +187,7 @@ def test_distilbert_action(item_text: str) -> str:
             <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
                 <div>
                     <span style='color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;'>DistilBERT Prediction</span>
-                    <div style='color: #f8fafc; font-size: 20px; font-weight: 700; margin-top: 2px;'>🎯 {res['predicted_category']}</div>
+                    <div style='color: #f8fafc; font-size: 20px; font-weight: 700; margin-top: 2px;'>{res['predicted_category']}</div>
                 </div>
                 <div style='text-align: right;'>
                     <span style='color: #94a3b8; font-size: 11px;'>Calibrated Confidence (T* = {res['temperature']})</span>
@@ -195,7 +195,7 @@ def test_distilbert_action(item_text: str) -> str:
                 </div>
             </div>
             <div style='font-size: 12px; color: #94a3b8; margin-bottom: 12px;'>
-                Raw Softmax Probability: <b>{res['raw_confidence']}%</b> • CPU Inference Latency: <b>{res['latency_ms']} ms</b>
+                Raw Softmax Probability: <b>{res['raw_confidence']}%</b> • CPU Latency: <b>{res['latency_ms']} ms</b>
             </div>
             <table style='width: 100%; border-collapse: collapse; font-size: 12.5px; color: #cbd5e1;'>
                 <thead>
@@ -209,7 +209,7 @@ def test_distilbert_action(item_text: str) -> str:
         </div>
         """
     except Exception as exc:
-        return f"<div class='notice-box error'>❌ DistilBERT Inference Error: {str(exc)}</div>"
+        return f"<div class='notice-box error'>DistilBERT Inference Error: {str(exc)}</div>"
 
 
 def recompute_items_total(df: pd.DataFrame, curr: str) -> str:
@@ -240,7 +240,7 @@ def confirm_and_save_receipt(
     c = curr or "₹"
 
     if df is None or df.empty:
-        return "<div class='notice-box error'>❌ Cannot save empty receipt. Scan or add items first.</div>"
+        return "<div class='notice-box error'>Cannot save empty receipt. Scan or add items first.</div>"
 
     items_to_save = []
     for _, row in df.iterrows():
@@ -281,10 +281,10 @@ def confirm_and_save_receipt(
         diff = abs(total_amount - printed_val)
         return (
             f"<div class='notice-box alert'>"
-            f"⚠️ <b>Reconciliation Discrepancy!</b><br>"
+            f"<b>Reconciliation Discrepancy:</b><br>"
             f"Calculated items sum is <b>{c}{total_amount:,.2f}</b>, but printed total is <b>{c}{printed_val:,.2f}</b> "
-            f"(Difference: <b>{c}{diff:.2f}</b>).<br>"
-            f"👉 Please review the table to adjust items or check <b>'Override discrepancy and force save'</b> below."
+            f"(Variance: <b>{c}{diff:.2f}</b>).<br>"
+            f"Review table items or check <b>'Override discrepancy and force save'</b> to proceed."
             f"</div>"
         )
 
@@ -310,7 +310,7 @@ def confirm_and_save_receipt(
 
     return (
         f"<div class='notice-box success'>"
-        f"✓ <b>Saved Successfully!</b> Receipt <code>{receipt_id}</code> ({c}{final_total:,.2f}) recorded to Expenses Database."
+        f"<b>Saved Successfully:</b> Receipt <code>{receipt_id}</code> ({c}{final_total:,.2f}) recorded to database."
         f"</div>"
     )
 
@@ -322,13 +322,13 @@ def retrain_personalization_action() -> str:
         if res.get("status") == "success":
             return (
                 f"<div class='notice-box success'>"
-                f"✓ <b>Classifier Weights Updated!</b> Incorporated <b>{res['user_corrections_count']} user corrections</b> "
-                f"across {len(res['classes'])} categories into local inference memory."
+                f"<b>Classifier Updated:</b> Incorporated <b>{res['user_corrections_count']} user corrections</b> "
+                f"across {len(res['classes'])} categories."
                 f"</div>"
             )
-        return f"<div class='notice-box warning'>⚠️ {res.get('message', 'Retraining warning')}</div>"
+        return f"<div class='notice-box warning'>{res.get('message', 'Retraining warning')}</div>"
     except Exception as exc:
-        return f"<div class='notice-box error'>❌ Retraining error: {str(exc)}</div>"
+        return f"<div class='notice-box error'>Retraining error: {str(exc)}</div>"
 
 
 # ─── Tab 2: Monthly Financial Analytics ──────────────────────────────────────
@@ -367,7 +367,7 @@ def load_analytics_dashboard(timeframe: str = "Monthly", period_key: Optional[st
         curr = data.get("currency", "₹")
         yoy_val = data.get("yoy_change_pct", 0.0)
         yoy_class = "trend-down" if yoy_val <= 0 else "trend-up"
-        yoy_sub = f"{'📈 +' if yoy_val > 0 else '📉 '}{yoy_val:.1f}% vs previous year" if data.get("prev_year") else "Annual baseline period"
+        yoy_sub = f"{'+' if yoy_val > 0 else ''}{yoy_val:.1f}% vs previous year" if data.get("prev_year") else "Annual baseline period"
 
         card_total = make_kpi_card("Annual Outlay", f"{curr}{data['grand_total']:,.2f}", yoy_sub, yoy_class)
         card_trips = make_kpi_card("Audited Receipts", f"{data['receipt_count']}", f"Across {len(data.get('store_totals', {}))} distinct stores", "trend-neutral")
@@ -382,18 +382,18 @@ def load_analytics_dashboard(timeframe: str = "Monthly", period_key: Optional[st
         formatted_insights = []
         for item in insights_list:
             if "Budget Alert:" in item or "Budget Watch:" in item:
-                formatted_insights.append(f"<div class='insight-card alert'>🚨 **Budget Warning**: {item.split(':', 1)[1].strip()}</div>")
+                formatted_insights.append(f"<div class='insight-card alert'>**Budget Warning**: {item.split(':', 1)[1].strip()}</div>")
             elif "Financial Health Score:" in item:
-                formatted_insights.append(f"<div class='insight-card health'>🛡️ **Health Index**: {item.split(':', 1)[1].strip()}</div>")
+                formatted_insights.append(f"<div class='insight-card health'>**Health Index**: {item.split(':', 1)[1].strip()}</div>")
             elif "Primary Expense Driver:" in item:
-                formatted_insights.append(f"<div class='insight-card'>🛒 **Primary Outlay Driver**: {item.split(':', 1)[1].strip()}</div>")
+                formatted_insights.append(f"<div class='insight-card'>**Primary Outlay Driver**: {item.split(':', 1)[1].strip()}</div>")
             elif "Annual Run-Rate & Velocity:" in item:
-                formatted_insights.append(f"<div class='insight-card forecast'>📈 **Annual Run-Rate**: {item.split(':', 1)[1].strip()}</div>")
+                formatted_insights.append(f"<div class='insight-card forecast'>**Annual Run-Rate**: {item.split(':', 1)[1].strip()}</div>")
             elif "Month-End Velocity Forecast:" in item:
-                formatted_insights.append(f"<div class='insight-card forecast'>📈 **Month-End Velocity**: {item.split(':', 1)[1].strip()}</div>")
+                formatted_insights.append(f"<div class='insight-card forecast'>**Month-End Velocity**: {item.split(':', 1)[1].strip()}</div>")
             elif ":" in item:
                 k, v = item.split(":", 1)
-                formatted_insights.append(f"<div class='insight-card'>💡 **{k.strip()}**: {v.strip()}</div>")
+                formatted_insights.append(f"<div class='insight-card'>**{k.strip()}**: {v.strip()}</div>")
             else:
                 formatted_insights.append(f"<div class='insight-card'>• {item}</div>")
 
@@ -430,7 +430,7 @@ def load_analytics_dashboard(timeframe: str = "Monthly", period_key: Optional[st
     else:
         mom_val = data.get("mom_change_pct", 0.0)
         trend_class = "trend-down" if mom_val <= 0 else "trend-up"
-        subtext = f"{'📈 +' if mom_val > 0 else '📉 '}{mom_val:.1f}% vs previous month" if data.get("prev_month") else "Baseline benchmark period"
+        subtext = f"{'+' if mom_val > 0 else ''}{mom_val:.1f}% vs previous month" if data.get("prev_month") else "Baseline benchmark period"
 
     card_total = make_kpi_card("Total Outlay", f"{curr}{data['grand_total']:,.2f}", subtext, trend_class)
     card_trips = make_kpi_card("Audited Receipts", f"{data['receipt_count']}", f"Across {len(data.get('store_totals', {}))} distinct stores", "trend-neutral")
@@ -445,16 +445,16 @@ def load_analytics_dashboard(timeframe: str = "Monthly", period_key: Optional[st
     formatted_insights = []
     for item in insights_list:
         if "Budget Alert:" in item or "Budget Watch:" in item:
-            formatted_insights.append(f"<div class='insight-card alert'>🚨 **Budget Warning**: {item.split(':', 1)[1].strip()}</div>")
+            formatted_insights.append(f"<div class='insight-card alert'>**Budget Warning**: {item.split(':', 1)[1].strip()}</div>")
         elif "Financial Health Score:" in item:
-            formatted_insights.append(f"<div class='insight-card health'>🛡️ **Health Index**: {item.split(':', 1)[1].strip()}</div>")
+            formatted_insights.append(f"<div class='insight-card health'>**Health Index**: {item.split(':', 1)[1].strip()}</div>")
         elif "Primary Expense Driver:" in item:
-            formatted_insights.append(f"<div class='insight-card'>🛒 **Primary Outlay Driver**: {item.split(':', 1)[1].strip()}</div>")
+            formatted_insights.append(f"<div class='insight-card'>**Primary Outlay Driver**: {item.split(':', 1)[1].strip()}</div>")
         elif "Month-End Velocity Forecast:" in item:
-            formatted_insights.append(f"<div class='insight-card forecast'>📈 **Month-End Velocity**: {item.split(':', 1)[1].strip()}</div>")
+            formatted_insights.append(f"<div class='insight-card forecast'>**Month-End Velocity**: {item.split(':', 1)[1].strip()}</div>")
         elif ":" in item:
             k, v = item.split(":", 1)
-            formatted_insights.append(f"<div class='insight-card'>💡 **{k.strip()}**: {v.strip()}</div>")
+            formatted_insights.append(f"<div class='insight-card'>**{k.strip()}**: {v.strip()}</div>")
         else:
             formatted_insights.append(f"<div class='insight-card'>• {item}</div>")
 
@@ -493,7 +493,7 @@ def export_csv_action(period_key: str):
         return gr.File(label="Download Exported File", visible=False)
     csv_file = export_to_csv(period_key)
     if csv_file and os.path.exists(csv_file):
-        return gr.File(value=csv_file, label=f"📥 Download Itemized CSV ({period_key})", visible=True)
+        return gr.File(value=csv_file, label=f"Download CSV ({period_key})", visible=True)
     return gr.File(label="Download Exported File", visible=False)
 
 
@@ -502,7 +502,7 @@ def export_json_action(period_key: str):
         return gr.File(label="Download Exported File", visible=False)
     json_file = export_to_json(period_key)
     if json_file and os.path.exists(json_file):
-        return gr.File(value=json_file, label=f"📥 Download Dataset JSON ({period_key})", visible=True)
+        return gr.File(value=json_file, label=f"Download JSON ({period_key})", visible=True)
     return gr.File(label="Download Exported File", visible=False)
 
 
@@ -523,7 +523,7 @@ def clear_chatbot():
     """Reset chatbot conversation history to initial greeting."""
     return [{
         "role": "assistant",
-        "content": "👋 **Hello! I am your personal ExpensifyAI Financial Advisor.**\n\nI analyze your audited receipts and line-item purchases in real time. Ask me anything about your finances, or click one of the suggested prompts below!"
+        "content": "Welcome to the financial assistant. You can inquire about category breakdowns, peak expenses, merchant spending, and savings opportunities for the selected period."
     }]
 
 
@@ -531,13 +531,13 @@ def clear_chatbot():
 def reconcile_statement_action(file_obj, month_key: Optional[str] = None):
     """Reconcile receipts against an uploaded bank or UPI statement CSV."""
     if file_obj is None:
-        return pd.DataFrame(), "<div class='notice-box warning'>⚠️ Please select and upload a valid bank or UPI statement CSV.</div>"
+        return pd.DataFrame(), "<div class='notice-box warning'>Please select and upload a valid bank or UPI statement CSV.</div>"
     try:
         file_path = file_obj.name if hasattr(file_obj, "name") else str(file_obj)
         txns = parse_bank_statement_csv(file_path)
         receipts = list_receipts(month_key=month_key) if month_key and month_key != "No data yet" else list_receipts()
         if not receipts:
-            return pd.DataFrame(), "<div class='notice-box warning'>⚠️ No scanned receipts available in database to reconcile.</div>"
+            return pd.DataFrame(), "<div class='notice-box warning'>No scanned receipts available in database to reconcile.</div>"
 
         matches = match_receipts_to_statement(receipts, txns)
         rows = []
@@ -551,7 +551,7 @@ def reconcile_statement_action(file_obj, month_key: Optional[str] = None):
                 "Receipt Amt": f"{m.receipt_amount:.2f}",
                 "Matched Transaction": m.txn_description,
                 "Bank Amt": f"{m.txn_amount:.2f}" if m.txn_amount > 0 else "—",
-                "Status": f"✅ {m.match_status}" if m.match_status == "Verified Match" else (f"🟡 {m.match_status}" if m.match_status == "Probable Match" else f"❌ {m.match_status}"),
+                "Status": m.match_status,
                 "Confidence": f"{m.confidence_score * 100:.0f}%",
                 "Audit Explanation": m.explanation
             })
@@ -566,7 +566,7 @@ def reconcile_statement_action(file_obj, month_key: Optional[str] = None):
         )
         return df, summary_html
     except Exception as exc:
-        return pd.DataFrame(), f"<div class='notice-box error'>❌ Reconciliation error: {str(exc)}</div>"
+        return pd.DataFrame(), f"<div class='notice-box error'>Reconciliation error: {str(exc)}</div>"
 
 
 # ─── Tab 4: Receipt History & CRUD ──────────────────────────────────────────
@@ -590,14 +590,15 @@ def search_and_list_receipts(search_term: str):
 
 def delete_receipt_action(receipt_id: str, confirmed: bool):
     if not receipt_id or not receipt_id.strip():
-        return "<div class='notice-box warning'>⚠️ Please select a row above or enter a Receipt ID to delete.</div>", search_and_list_receipts("")
+        return "<div class='notice-box warning'>Please select a row above or enter a Receipt ID to delete.</div>", search_and_list_receipts("")
     if not confirmed:
-        return "<div class='notice-box alert'>⚠️ Confirmation required: Check 'Yes, confirm permanent deletion' before proceeding.</div>", search_and_list_receipts("")
+        return "<div class='notice-box alert'>Confirmation required: Check 'Confirm permanent deletion' before proceeding.</div>", search_and_list_receipts("")
     deleted = delete_receipt(receipt_id.strip())
     if deleted:
-        msg = f"<div class='notice-box success'>✓ Successfully deleted receipt <code>{receipt_id.strip()}</code>.</div>"
+        msg = f"<div class='notice-box success'>Successfully deleted receipt <code>{receipt_id.strip()}</code>.</div>"
     else:
-        msg = f"<div class='notice-box error'>❌ Receipt <code>{receipt_id.strip()}</code> not found.</div>"
+        msg = f"<div class='notice-box error'>Receipt <code>{receipt_id.strip()}</code> not found.</div>"
+    return msg, search_and_list_receipts("")
     return msg, search_and_list_receipts("")
 
 
@@ -902,7 +903,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
     gr.HTML("""
     <div class="app-header">
         <div>
-            <div class="app-title">🧾 ExpensifyML <span style="font-weight:400; font-size:13px; color:#94a3b8;">v2.0</span></div>
+            <div class="app-title">ExpensifyML <span style="font-weight:400; font-size:13px; color:#94a3b8;">v2.0</span></div>
             <div class="app-subtitle">Automated Receipt Digitization, Active Learning Categorization & Expense Intelligence</div>
         </div>
         <div class="app-badges">
@@ -916,7 +917,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
     with gr.Tabs() as tabs:
 
         # ── TAB 1: SCAN & VERIFY RECEIPT ────────────────────────────────────
-        with gr.Tab("🧾 Scan & Verify Receipt"):
+        with gr.Tab("Scan & Verify"):
             with gr.Row():
                 # Left Column: Upload & Engine Choice
                 with gr.Column(scale=5):
@@ -924,19 +925,17 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
 
                     engine_select = gr.Radio(
                         label="OCR Engine",
-                        choices=["Tesseract Spatial (Fast CPU • ~213ms)", "TrOCR (Deep Vision Transformer • ~1.4s/line)"],
-                        value="Tesseract Spatial (Fast CPU • ~213ms)",
-                        info="Tesseract clusters layout-aware lines; TrOCR performs deep sequence generation"
+                        choices=["Tesseract Spatial", "TrOCR Neural"],
+                        value="Tesseract Spatial"
                     )
 
                     categorizer_select = gr.Radio(
                         label="Categorization Model",
-                        choices=["Hybrid Multi-Tier (Rules + Memory + DistilBERT)", "Pure DistilBERT Neural (Transformer Only)"],
-                        value="Hybrid Multi-Tier (Rules + Memory + DistilBERT)",
-                        info="Hybrid achieves sub-ms speeds with DistilBERT fallback; Pure DistilBERT executes fine-tuned transformer on all items"
+                        choices=["Hybrid Multi-Tier", "Pure DistilBERT"],
+                        value="Hybrid Multi-Tier"
                     )
 
-                    scan_btn = gr.Button("⚡ Scan & Extract Receipt", variant="primary", size="lg")
+                    scan_btn = gr.Button("Scan Receipt", variant="primary")
 
                 # Right Column: Extracted Receipt Summary
                 with gr.Column(scale=6):
@@ -960,20 +959,19 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                     with gr.Row():
                         recon_badge = gr.HTML("<div class='recon-pill-neutral'><span class='dot'></span> Ready to Scan</div>")
 
-                    status_banner = gr.HTML("<div class='notice-box neutral'>Upload a receipt photograph and click <b>Scan & Extract</b>.</div>")
+                    status_banner = gr.HTML("<div class='notice-box neutral'>Upload a receipt photograph and click <b>Scan Receipt</b>.</div>")
 
-            gr.Markdown("### 📝 Itemized Expenses (Human-in-the-Loop Editor)")
+            gr.Markdown("### Itemized Expenses")
             items_editor = gr.DataFrame(
                 headers=["Item Description", "Category", "Amount", "Confidence", "Qty"],
                 datatype=["str", "str", "number", "str", "number"],
                 interactive=True,
                 wrap=True,
-                label="Line Items (Click cells to edit names, categories, or amounts)"
+                label="Line Items"
             )
 
             with gr.Row():
                 calc_total_display = gr.HTML("<div class='calc-total-pill'>Calculated Items Sum: <b>₹0.00</b></div>")
-                recalc_btn = gr.Button("🔄 Recompute Total", size="sm")
 
             with gr.Row():
                 pay_method_in = gr.Dropdown(
@@ -984,29 +982,24 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 notes_in = gr.Textbox(label="Transaction Notes (optional)", placeholder="e.g. Weekly grocery stockup")
 
             force_save_chk = gr.Checkbox(
-                label="⚠️ Override discrepancy and force save (Check only if saving an unbalanced receipt)",
+                label="Override discrepancy and force save",
                 value=False
             )
 
-            save_db_btn = gr.Button("💾 Confirm & Save Expense Record", variant="primary", size="lg")
+            save_db_btn = gr.Button("Save Record", variant="primary")
             save_feedback = gr.HTML("")
 
             # Collapsible Advanced Sections
-            with gr.Accordion("🤖 Interactive DistilBERT Classifier Sandbox & Inspector", open=False):
-                gr.Markdown("""
-                **Inspect the fine-tuned DistilBERT neural sequence classifier in real time:**  
-                Enter any item description or novel brand to evaluate its predicted category, calibrated confidence, 
-                temperature scaling factor ($T^*$), candidate class probability distribution, and CPU latency.
-                """)
+            with gr.Accordion("DistilBERT Classifier Inspector", open=False):
                 with gr.Row():
                     distilbert_input = gr.Textbox(
                         label="Item Description to Classify",
-                        placeholder="e.g. 'Apple iPhone Fast Charger', 'Uber Ride to Airport', 'Whole Wheat Sourdough Bread'",
+                        placeholder="e.g. Apple iPhone Fast Charger, Uber Ride to Airport",
                         scale=4
                     )
-                    test_distilbert_btn = gr.Button("⚡ Classify with DistilBERT", variant="primary", scale=1)
+                    test_distilbert_btn = gr.Button("Classify Item", variant="primary", scale=1)
 
-                distilbert_result_box = gr.HTML("<div class='notice-box neutral'>Enter an item description above and click <b>Classify with DistilBERT</b>.</div>")
+                distilbert_result_box = gr.HTML("<div class='notice-box neutral'>Enter an item description above and click <b>Classify Item</b>.</div>")
 
                 gr.Examples(
                     examples=[
@@ -1033,20 +1026,15 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                     outputs=[distilbert_result_box]
                 )
 
-            with gr.Accordion("🧠 Active Learning & Personalization Engine", open=False):
-                gr.Markdown(
-                    "The system continuously learns from your category adjustments. Every confirmed edit is stored in your "
-                    "local SQLite memory table (`user_corrections`) and overrides future model predictions. "
-                    "You can also retrain on-device model weights anytime."
-                )
+            with gr.Accordion("Active Learning and Personalization", open=False):
                 with gr.Row():
-                    retrain_model_btn = gr.Button("🔄 Update Classifier on Saved Corrections", size="sm")
+                    retrain_model_btn = gr.Button("Update Classifier on Corrections", size="sm")
                 retrain_model_feedback = gr.HTML("")
 
-            with gr.Accordion("🖼️ Visual Bounding Box Inspector", open=False):
+            with gr.Accordion("Visual Bounding Box Inspector", open=False):
                 annotated_preview = gr.Image(label="Segmented Line Bounding Boxes", height=420)
 
-            with gr.Accordion("📄 Raw OCR Transcript (Debug View)", open=False):
+            with gr.Accordion("Raw OCR Transcript", open=False):
                 raw_ocr_output = gr.Textbox(label="Raw Character Recognition Output", lines=7, interactive=False)
 
             # Event Handlers for Tab 1
@@ -1069,7 +1057,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[calc_total_display]
             )
 
-            recalc_btn.click(
+            items_editor.change(
                 fn=recompute_items_total,
                 inputs=[items_editor, currency_in],
                 outputs=[calc_total_display]
@@ -1085,10 +1073,10 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
         init_month = init_months[0] if init_months else None
         init_total, init_trips, init_avg, init_top, init_chart, init_insights = load_analytics_dashboard("Monthly", init_month)
 
-        with gr.Tab("📊 Spending Analytics") as tab_spending_analytics:
+        with gr.Tab("Spending Analytics") as tab_spending_analytics:
             with gr.Row():
                 timeframe_radio = gr.Radio(
-                    label="📅 Time Horizon",
+                    label="Time Horizon",
                     choices=["Monthly", "Weekly", "Yearly"],
                     value="Monthly",
                     scale=2
@@ -1099,9 +1087,9 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                     value=init_month,
                     scale=3
                 )
-                refresh_analytics_btn = gr.Button("🔄 Refresh", scale=1)
-                export_csv_btn = gr.Button("📥 Export CSV", scale=1)
-                export_json_btn = gr.Button("📥 Export JSON", scale=1)
+                refresh_analytics_btn = gr.Button("Refresh", scale=1)
+                export_csv_btn = gr.Button("Export CSV", scale=1)
+                export_json_btn = gr.Button("Export JSON", scale=1)
 
             # 4 Sleek KPI Metric Cards
             with gr.Row():
@@ -1112,14 +1100,14 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
 
             with gr.Row():
                 with gr.Column(scale=5):
-                    gr.Markdown("### 📈 Visual Expense Distribution")
-                    chart_display = gr.Image(value=init_chart, label="Dynamic Spending Analytics", height=400)
+                    gr.Markdown("### Expense Distribution")
+                    chart_display = gr.Image(value=init_chart, label="Spending Distribution", height=400)
 
                 with gr.Column(scale=7):
-                    gr.Markdown("### 💡 Financial Insights & Budget Alerts")
+                    gr.Markdown("### Insights and Budget Alerts")
                     insights_display = gr.Markdown(init_insights)
 
-            file_download = gr.File(label="📥 Download Exported Dataset", visible=False)
+            file_download = gr.File(label="Download Exported Dataset", visible=False)
 
             # Tab event handlers
             timeframe_radio.change(
@@ -1166,15 +1154,13 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[file_download]
             )
 
-        # ── TAB 3: AI FINANCIAL CHATBOT ─────────────────────────────────────
-        with gr.Tab("💬 AI Financial Chatbot") as tab_ai_chatbot:
+        # ── TAB 3: FINANCIAL ASSISTANT ──────────────────────────────────────
+        with gr.Tab("Financial Assistant") as tab_ai_chatbot:
             gr.HTML("""
             <div style="margin-bottom: 16px;">
-                <div style="font-size: 20px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
-                    <span>💬</span> ExpensifyAI Financial Chatbot & Spending Advisor
-                </div>
+                <div style="font-size: 18px; font-weight: 700; color: #f8fafc;">Financial Assistant</div>
                 <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">
-                    Converse directly with your local AI financial advisor. Ask real-time questions about your spending patterns, category breakdowns, merchant concentrations, budget pacing, and personalized savings strategies.
+                    Audited expense queries, budget tracking, and spending analysis.
                 </div>
             </div>
             """)
@@ -1184,30 +1170,29 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                     label="Statement Period Context",
                     choices=init_months or ["No data yet"],
                     value=init_month,
-                    scale=4,
-                    info="The AI advisor will analyze transaction data from this specific billing period"
+                    scale=4
                 )
-                chatbot_sync_btn = gr.Button("🔄 Sync Period", scale=1)
+                chatbot_sync_btn = gr.Button("Sync Period", scale=1)
 
             chatbot_display = gr.Chatbot(
                 value=[{
                     "role": "assistant",
-                    "content": "👋 **Hello! I am your personal ExpensifyAI Financial Advisor.**\n\nI analyze your audited receipts and line-item purchases in real time. Ask me anything about your finances, or click one of the suggested prompts below!"
+                    "content": "Hello. I can answer queries regarding your expenses, budget alerts, category breakdowns, and merchant totals. Enter a question below."
                 }],
-                label="ExpensifyAI Conversation",
+                label="Financial Dialogue",
                 height=480,
                 buttons=["copy"]
             )
 
             with gr.Row():
                 chatbot_query_in = gr.Textbox(
-                    label="Your Financial Question",
-                    placeholder="Ask anything, e.g. 'What was my single most expensive purchase?', 'Break down my food spend', 'How can I save money?'",
+                    label="Financial Query",
+                    placeholder="e.g. What was my single most expensive purchase? Break down my food spend. How can I cut expenses?",
                     scale=5,
                     lines=1
                 )
-                chatbot_send_btn = gr.Button("💬 Send", variant="primary", scale=1)
-                chatbot_clear_btn = gr.Button("🗑️ Clear", variant="secondary", scale=1)
+                chatbot_send_btn = gr.Button("Send", variant="primary", scale=1)
+                chatbot_clear_btn = gr.Button("Clear", variant="secondary", scale=1)
 
             gr.Examples(
                 examples=[
@@ -1245,19 +1230,18 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[chatbot_period_select]
             )
 
-        # ── TAB 4: BANK & UPI STATEMENT RECONCILIATION ──────────────────────
-        with gr.Tab("💳 Bank & Statement Reconciliation"):
+        # ── TAB 4: STATEMENT RECONCILIATION ─────────────────────────────────
+        with gr.Tab("Statement Reconciliation"):
             gr.Markdown("""
-            ### 💳 Cross-Reconcile Receipts with Bank / UPI Statements
-            Upload your monthly Bank or UPI statement export (`.csv`) to automatically verify physical receipts 
-            against digital settlements using **amount matching**, **date window tolerance (±3d)**, and **fuzzy merchant alignment**.
+            ### Statement Reconciliation
+            Cross-reconcile physical receipts with bank or UPI statements using date, amount, and merchant matching.
             """)
 
             with gr.Row():
-                statement_file_in = gr.File(label="Upload Bank / UPI Statement CSV", file_types=[".csv"], scale=3)
-                reconcile_btn = gr.Button("🔍 Reconcile Transactions", variant="primary", scale=1)
+                statement_file_in = gr.File(label="Upload Bank or UPI Statement CSV", file_types=[".csv"], scale=3)
+                reconcile_btn = gr.Button("Reconcile Statement", variant="primary", scale=1)
 
-            statement_recon_summary = gr.HTML("<div class='notice-box neutral'>Upload a statement CSV and click <b>Reconcile Transactions</b>.</div>")
+            statement_recon_summary = gr.HTML("<div class='notice-box neutral'>Upload a statement CSV and click <b>Reconcile Statement</b>.</div>")
 
             statement_recon_table = gr.DataFrame(
                 headers=["Receipt ID", "Merchant", "Receipt Amt", "Matched Transaction", "Bank Amt", "Status", "Confidence", "Audit Explanation"],
@@ -1272,9 +1256,9 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[statement_recon_table, statement_recon_summary]
             )
 
-        # ── TAB 5: RECEIPT REPOSITORY & CRUD ────────────────────────────────
-        with gr.Tab("🗄️ Receipt History & Archive"):
-            gr.Markdown("### 🗄️ Search, Inspect & Manage Archived Receipts")
+        # ── TAB 5: RECEIPT ARCHIVE ──────────────────────────────────────────
+        with gr.Tab("Receipt Archive"):
+            gr.Markdown("### Receipt Archive")
 
             with gr.Row():
                 search_query_box = gr.Textbox(
@@ -1293,8 +1277,8 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
 
             with gr.Row():
                 delete_id_box = gr.Textbox(label="Receipt ID to Remove (Click any row above to auto-select)", placeholder="e.g. REC-202610-001", scale=3)
-                delete_confirm_chk = gr.Checkbox(label="⚠️ Yes, confirm permanent deletion", value=False, scale=2)
-                delete_btn = gr.Button("🗑️ Delete Receipt", variant="stop", scale=1)
+                delete_confirm_chk = gr.Checkbox(label="Confirm permanent deletion", value=False, scale=2)
+                delete_btn = gr.Button("Delete Receipt", variant="stop", scale=1)
 
             delete_feedback = gr.HTML("")
 
@@ -1316,10 +1300,10 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[delete_feedback, repo_table]
             )
 
-        # ── TAB 6: SYSTEM ARCHITECTURE & BENCHMARKS ─────────────────────────
-        with gr.Tab("📐 System Architecture & Specs"):
+        # ── TAB 6: SYSTEM ARCHITECTURE ──────────────────────────────────────
+        with gr.Tab("System Architecture"):
             gr.Markdown(r"""
-            ### 🏗️ Production Architecture & Pipeline Design
+            ### System Architecture and Specifications
 
             | Pipeline Component | Technology Stack | Latency / Accuracy Profile |
             | :--- | :--- | :--- |
@@ -1333,7 +1317,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
 
             ---
 
-            ### 📊 Empirical Performance Summary (Held-Out Receipts)
+            ### Empirical Performance Summary (Held-Out Receipts)
             - **Item Extraction Recall**: `100.0%` (19/19)
             - **Item Extraction Precision**: `100.0%` (19/19)
             - **Financial Total Match Rate**: `100.0%` (4/4)
@@ -1381,9 +1365,9 @@ if __name__ == "__main__":
         demo_user = os.environ.get("DEMO_USER", "admin")
         demo_pass = os.environ.get("DEMO_PASSWORD", "demo123")
         auth_credentials = (demo_user, demo_pass)
-        print(f"🔒 Demo authentication enabled (User: {demo_user})")
+        print(f"Demo authentication enabled (User: {demo_user})")
 
-    print(f"🚀 Launching Smart Receipt Scanner on http://localhost:{port}")
+    print(f"Launching Smart Receipt Scanner on http://localhost:{port}")
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,

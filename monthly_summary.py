@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import uuid
 from collections import Counter, defaultdict
@@ -473,18 +474,19 @@ def generate_insights(data: Optional[dict]) -> List[str]:
 
 
 def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
-    """Interactive natural language Q&A engine for personalized spending intelligence."""
+    """Natural language financial intelligence engine for spending, budget, and transaction analysis."""
     if not query or not query.strip():
-        return "Please enter a question about your spending or budget."
+        return "Please enter a specific question regarding spending, categories, merchants, or budget pacing."
 
-    if month_key and len(str(month_key).strip()) == 4 and str(month_key).strip().isdigit():
+    is_yearly = month_key and len(str(month_key).strip()) == 4 and str(month_key).strip().isdigit()
+    if is_yearly:
         from storage import get_yearly_data
         data = get_yearly_data(month_key)
     else:
         data = get_monthly_data(month_key)
 
     if not data or not data.get("receipts"):
-        return "No transactions are recorded for this period yet. Scan receipts in Tab 1 to activate the AI Financial Advisor."
+        return "No transactions are recorded for this statement period. Digitize receipts in Scan & Verify to populate analysis."
 
     period_lbl = data.get("month") or data.get("year", "Selected Period")
     q = query.lower().strip()
@@ -493,6 +495,7 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
     receipts = data.get("receipts", [])
     cat_totals = data.get("category_totals", {})
     store_totals = data.get("store_totals", {})
+    store_counts = data.get("store_counts", {})
 
     all_items = []
     for r in receipts:
@@ -503,107 +506,296 @@ def query_financial_advisor(query: str, month_key: Optional[str] = None) -> str:
                 "category": it.get("category", "Other"),
                 "store": r.get("store", "Store"),
                 "date": r.get("date", ""),
-                "qty": float(it.get("quantity", 1.0))
+                "qty": float(it.get("quantity", 1.0)),
+                "unit_price": float(it.get("unit_price", 0.0))
             })
 
     all_items.sort(key=lambda x: x["amount"], reverse=True)
 
-    # 1. Biggest / Most expensive purchase
-    if any(w in q for w in ["biggest", "most expensive", "highest", "costliest", "peak", "top purchase"]):
-        top_3 = all_items[:3]
-        lines = [
-            f"### 🏷️ Top Single-Item Purchases in {period_lbl}",
-            f"Your peak expense was **{top_3[0]['name']}** for **{curr}{top_3[0]['amount']:,.2f}** at *{top_3[0]['store']}* ({top_3[0]['date']}).\n",
-            "**Top items ranked by expenditure:**"
-        ]
-        for idx, item in enumerate(top_3, 1):
-            pct = (item["amount"] / max(grand, 1.0)) * 100
-            lines.append(f"{idx}. **{item['name']}** — {curr}{item['amount']:,.2f} ({pct:.1f}% of total spend) | *{item['store']}*")
-        return "\n\n".join(lines)
+    # 1. Specific Item Search (e.g., "did I buy milk?", "how much on coffee?", "paracetamol price")
+    search_keywords = ["did i buy", "did i purchase", "how much did i spend on", "how much for", "price of", "cost of", "find item", "search item"]
+    target_item_query = ""
+    for prefix in search_keywords:
+        if prefix in q:
+            target_item_query = q.split(prefix, 1)[1].strip(" ?.").strip()
+            break
 
-    # 2. Detailed category breakdown
-    if any(w in q for w in ["break down", "breakdown", "category", "categories", "where did my money go"]):
+    # If no explicit prefix, check if query matches any purchased item name
+    if not target_item_query and len(q.split()) <= 4:
+        for it in all_items:
+            it_name_lower = it["name"].lower()
+            tokens = [t for t in q.replace("?", "").split() if t not in ["the", "a", "an", "any", "my", "our", "did", "i", "we", "much", "spent", "on"]]
+            if tokens and any(tok in it_name_lower for tok in tokens if len(tok) >= 3):
+                target_item_query = " ".join(tokens)
+                break
+
+    if target_item_query and len(target_item_query) >= 3:
+        matching_items = [
+            it for it in all_items
+            if target_item_query in it["name"].lower() or any(w in it["name"].lower() for w in target_item_query.split() if len(w) >= 3)
+        ]
+        if matching_items:
+            match_total = sum(it["amount"] for it in matching_items)
+            lines = [
+                f"### Itemized Purchase Details: '{target_item_query.title()}' ({period_lbl})",
+                f"Found **{len(matching_items)} matching purchase(s)** totaling **{curr}{match_total:,.2f}**:\n",
+                "| Date | Merchant | Item Description | Category | Qty | Unit Price | Total Amount |",
+                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+            ]
+            for it in matching_items:
+                u_price = it["unit_price"] if it["unit_price"] > 0 else (it["amount"] / max(it["qty"], 1.0))
+                lines.append(
+                    f"| {it['date']} | {it['store']} | {it['name']} | {it['category']} | {it['qty']:.0f} | {curr}{u_price:,.2f} | {curr}{it['amount']:,.2f} |"
+                )
+            lines.append(f"\nAverage unit acquisition cost: **{curr}{(match_total / max(sum(it['qty'] for it in matching_items), 1)):,.2f}**.")
+            return "\n".join(lines)
+
+    # 2. 50/30/20 Budget Framework Analysis
+    if any(w in q for w in ["50/30/20", "framework", "needs", "wants", "budget analysis", "budget rule"]):
+        needs_cats = {"Food", "Household", "Medical", "Utilities", "Transportation"}
+        wants_cats = {"Dining", "Drinks", "Bakery", "Entertainment", "Apparel", "Electronics"}
+
+        needs_spend = sum(cat_totals.get(c, 0.0) for c in needs_cats)
+        wants_spend = sum(cat_totals.get(c, 0.0) for c in wants_cats)
+        other_spend = grand - (needs_spend + wants_spend)
+
+        needs_pct = (needs_spend / max(grand, 1.0)) * 100
+        wants_pct = (wants_spend / max(grand, 1.0)) * 100
+        other_pct = (other_spend / max(grand, 1.0)) * 100
+
         lines = [
-            f"### 📊 Detailed Category Breakdown for {period_lbl}",
-            f"Total Spend: **{curr}{grand:,.2f}** across **{len(receipts)} trips** and **{len(all_items)} items**.\n",
-            "| Category | Total Spent | Share | Item Count |",
-            "| :--- | :--- | :--- | :--- |"
+            f"### 50/30/20 Budget Framework Evaluation ({period_lbl})",
+            f"Total Audited Expenditure: **{curr}{grand:,.2f}**\n",
+            "| Expense Tier | Category Scope | Actual Spend | Actual Share | Benchmark Target | Variance |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- |",
+            f"| **Needs (Essential)** | Groceries, Utilities, Health, Commute | {curr}{needs_spend:,.2f} | {needs_pct:.1f}% | 50.0% | {'+' if needs_pct > 50 else ''}{needs_pct - 50:.1f}% |",
+            f"| **Wants (Discretionary)** | Dining, Entertainment, Apparel, Tech | {curr}{wants_spend:,.2f} | {wants_pct:.1f}% | 30.0% | {'+' if wants_pct > 30 else ''}{wants_pct - 30:.1f}% |",
+            f"| **Other / Unclassified** | Home & Hardware, Stationery, Misc | {curr}{other_spend:,.2f} | {other_pct:.1f}% | 20.0% (Savings Buffer) | — |",
+            "\n**Financial Assessment:**",
+        ]
+        if wants_pct > 35:
+            lines.append(f"- **High Discretionary Allocation**: Discretionary expenditure represents {wants_pct:.1f}% of total outflow (target <= 30.0%). Moderating dining and entertainment could reclaim up to {curr}{wants_spend - (grand * 0.30):,.2f}.")
+        else:
+            lines.append(f"- **Sound Capital Discipline**: Discretionary purchases are constrained within {wants_pct:.1f}% of total spend, aligning with prudent financial targets.")
+
+        if needs_pct > 65:
+            lines.append(f"- **Heavy Essentials Weight**: Essential living requirements account for {needs_pct:.1f}% of total outflow. Review utility consumption and grocery format sizing to optimize baseline operational costs.")
+        else:
+            lines.append(f"- **Balanced Baseline**: Essentials represent {needs_pct:.1f}% of total allocation, leaving sufficient room for discretionary flexibility and emergency reserves.")
+
+        return "\n".join(lines)
+
+    # 3. Peak / Largest Single-Item Outlays
+    if any(w in q for w in ["biggest", "most expensive", "highest", "costliest", "peak", "largest", "top purchase", "top expense"]):
+        top_items = all_items[:5]
+        lines = [
+            f"### Top Line-Item Expenditures ({period_lbl})",
+            f"Peak single-item outflow was **{top_items[0]['name']}** for **{curr}{top_items[0]['amount']:,.2f}** at *{top_items[0]['store']}* ({top_items[0]['date']}).\n",
+            "| Rank | Item Description | Category | Merchant | Amount | Share of Total |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- |"
+        ]
+        for idx, item in enumerate(top_items, 1):
+            pct = (item["amount"] / max(grand, 1.0)) * 100
+            lines.append(f"| {idx} | **{item['name']}** | {item['category']} | {item['store']} | {curr}{item['amount']:,.2f} | {pct:.1f}% |")
+        lines.append(f"\nTop {len(top_items)} purchases collectively represent **{curr}{sum(it['amount'] for it in top_items):,.2f}** ({(sum(it['amount'] for it in top_items)/max(grand, 1.0))*100:.1f}% of monthly outlay).")
+        return "\n".join(lines)
+
+    # 4. Detailed Category Breakdown & Specific Category Inquiries
+    if any(w in q for w in ["break down", "breakdown", "by category", "categories", "where did my money go", "all categories"]):
+        lines = [
+            f"### Category Expenditure Allocation ({period_lbl})",
+            f"Total Spend: **{curr}{grand:,.2f}** across **{len(receipts)} receipts** and **{len(all_items)} line items**.\n",
+            "| Category | Total Outlay | Allocation Share | Item Count | Avg Cost / Item |",
+            "| :--- | :--- | :--- | :--- | :--- |"
         ]
         for cat, amt in sorted(cat_totals.items(), key=lambda x: x[1], reverse=True):
             pct = (amt / max(grand, 1.0)) * 100
             cnt = data.get("category_counts", {}).get(cat, 0)
-            lines.append(f"| **{cat}** | {curr}{amt:,.2f} | {pct:.1f}% | {cnt} |")
+            avg_it = amt / max(cnt, 1)
+            lines.append(f"| **{cat}** | {curr}{amt:,.2f} | {pct:.1f}% | {cnt} | {curr}{avg_it:,.2f} |")
         return "\n".join(lines)
 
-    # 3. Specific category lookup (Food, Drinks, Medical, Transportation, etc.)
-    for cat in [
-        "Food", "Drinks", "Dining", "Bakery", "Household", "Personal Care",
-        "Medical", "Transportation", "Electronics", "Apparel", "Home & Hardware",
-        "Entertainment", "Utilities", "Office & Stationery"
-    ]:
-        if cat.lower() in q:
-            cat_amt = cat_totals.get(cat, 0.0)
-            cat_pct = (cat_amt / max(grand, 1.0)) * 100
-            cat_items = [it for it in all_items if it["category"].lower() == cat.lower()]
-            lines = [
-                f"### 🛒 Spending on {cat} in {period_lbl}",
-                f"You spent **{curr}{cat_amt:,.2f}** on **{cat}**, which accounts for **{cat_pct:.1f}%** of your total expenditure across **{len(cat_items)} items**.\n",
-                "**Items in this category:**"
-            ]
-            for it in cat_items:
-                lines.append(f"• **{it['name']}**: {curr}{it['amount']:,.2f} (Qty: {it['qty']}) at *{it['store']}*")
-            return "\n\n".join(lines)
+    category_aliases = {
+        "Food": ["food", "grocery", "groceries", "supermarket", "staples", "vegetables", "fruits"],
+        "Drinks": ["drinks", "beverage", "beverages", "tea", "coffee", "juice", "soda"],
+        "Dining": ["dining", "restaurant", "restaurants", "cafe", "takeout", "eating out"],
+        "Bakery": ["bakery", "bread", "pastry", "cookies", "cakes", "brownie"],
+        "Household": ["household", "cleaning", "detergent", "laundry", "toiletries"],
+        "Personal Care": ["personal care", "hygiene", "soap", "shampoo", "skincare"],
+        "Medical": ["medical", "medicine", "medicines", "pharmacy", "healthcare", "pharma"],
+        "Transportation": ["transport", "transportation", "fuel", "petrol", "cab", "uber", "commute", "transit"],
+        "Electronics": ["electronics", "tech", "gadget", "charger", "hardware tech"],
+        "Apparel": ["apparel", "clothing", "clothes", "garments", "fashion"],
+        "Home & Hardware": ["home & hardware", "hardware", "tools", "repair", "electrical"],
+        "Entertainment": ["entertainment", "netflix", "movies", "streaming", "subscriptions"],
+        "Utilities": ["utilities", "electricity", "power", "internet", "wifi", "broadband", "water bill"],
+        "Office & Stationery": ["stationery", "office", "paper", "pen", "books"]
+    }
 
-    # 4. Store / Merchant breakdown
-    if any(w in q for w in ["store", "merchant", "vendor", "where do i shop", "supermarket", "shops"]):
+    matched_cat = None
+    for canonical, aliases in category_aliases.items():
+        if any(re.search(r"\b" + re.escape(alias) + r"\b", q) for alias in aliases):
+            matched_cat = canonical
+            break
+
+    if matched_cat:
+        cat_amt = cat_totals.get(matched_cat, 0.0)
+        cat_pct = (cat_amt / max(grand, 1.0)) * 100
+        cat_items = [it for it in all_items if it["category"].lower() == matched_cat.lower()]
         lines = [
-            f"### 🏪 Merchant Breakdown for {period_lbl}",
-            f"You shopped at **{len(store_totals)} unique stores** during this period:\n"
+            f"### Category Audit: {matched_cat} ({period_lbl})",
+            f"Total Outlay: **{curr}{cat_amt:,.2f}** ({cat_pct:.1f}% of total budget across {len(cat_items)} item purchases).\n",
+            "| Date | Merchant | Item Description | Qty | Unit Price | Amount |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- |"
+        ]
+        for it in cat_items:
+            u_p = it["unit_price"] if it["unit_price"] > 0 else (it["amount"] / max(it["qty"], 1.0))
+            lines.append(f"| {it['date']} | {it['store']} | {it['name']} | {it['qty']:.0f} | {curr}{u_p:,.2f} | {curr}{it['amount']:,.2f} |")
+        return "\n".join(lines)
+
+    # 5. Merchant & Store Breakdown
+    if any(w in q for w in ["store", "merchant", "vendor", "retailer", "where do i shop", "shops", "supermarket"]):
+        lines = [
+            f"### Merchant Concentration Analysis ({period_lbl})",
+            f"Expenditure across **{len(store_totals)} distinct merchants** totaling **{curr}{grand:,.2f}**:\n",
+            "| Merchant / Vendor | Total Outlay | Share of Wallet | Visit Count | Avg Spend / Visit |",
+            "| :--- | :--- | :--- | :--- | :--- |"
         ]
         for store, amt in sorted(store_totals.items(), key=lambda x: x[1], reverse=True):
             pct = (amt / max(grand, 1.0)) * 100
-            visits = data.get("store_counts", {}).get(store, 1)
-            lines.append(f"• **{store}**: **{curr}{amt:,.2f}** ({pct:.1f}% of total) across **{visits} visit{'s' if visits > 1 else ''}** (Avg: {curr}{amt/visits:,.2f}/trip)")
+            visits = store_counts.get(store, 1)
+            avg_trip = amt / visits
+            lines.append(f"| **{store}** | {curr}{amt:,.2f} | {pct:.1f}% | {visits} | {curr}{avg_trip:,.2f} |")
+        return "\n".join(lines)
+
+    # 6. Actionable Cost Savings Opportunities
+    if any(w in q for w in ["save", "saving", "savings", "cut", "reduce", "plan", "recommendation", "advice", "tips"]):
+        lines = [
+            f"### Strategic Expenditure Optimization ({period_lbl})",
+            f"Based on empirical item-level transactions totaling **{curr}{grand:,.2f}**, here are targeted savings levers:\n"
+        ]
+        recs = []
+        if cat_totals.get("Food", 0) > (grand * 0.30):
+            food_amt = cat_totals["Food"]
+            recs.append(
+                f"1. **Bulk Staples Procurement**: Grocery staples represent {curr}{food_amt:,.2f} ({(food_amt/grand)*100:.0f}% of spend). Consolidating pantry dry goods into warehouse sizes (5kg+ formats) typically yields **12% to 18% margin savings** (~{curr}{food_amt * 0.14:,.2f}/month)."
+            )
+        if "Dining" in cat_totals and cat_totals["Dining"] > 0:
+            dining_amt = cat_totals["Dining"]
+            recs.append(
+                f"2. **Dining vs Home Meal Balance**: Dining out represents {curr}{dining_amt:,.2f}. Substituting two dining occasions per month with home preparation recovers up to **{curr}{dining_amt * 0.35:,.2f}**."
+            )
+        if len(store_totals) >= 3:
+            recs.append(
+                f"3. **Trip Batching & Vendor Consolidation**: Shopping across {len(store_totals)} separate venues averages {curr}{data.get('avg_per_receipt', 0.0):,.2f} per transaction. Consolidating into bi-weekly planned trips curtails incidental impulse additions by an estimated **8% to 10%** (~{curr}{grand * 0.09:,.2f})."
+            )
+        if "Utilities" in cat_totals or "Entertainment" in cat_totals:
+            rec_subs = cat_totals.get("Entertainment", 0) + cat_totals.get("Utilities", 0)
+            recs.append(
+                f"4. **Recurring Subscriptions Review**: Fixed monthly service charges total {curr}{rec_subs:,.2f}. Audit recurring memberships and broadband tiers annually to avoid subscription creep."
+            )
+        lines.extend(recs if recs else [
+            f"1. **Baseline Maintenance**: Discretionary outlays are within standard thresholds. Maintain current tracking cadence to establish quarterly baseline averages."
+        ])
         return "\n\n".join(lines)
 
-    # 5. Budget / Savings Advice
-    if any(w in q for w in ["save", "saving", "cut", "reduce", "budget", "plan", "advice", "tips"]):
-        top_name = all_items[0]['name'] if all_items else "primary staples"
-        top_amt = all_items[0]['amount'] if all_items else 0.0
+    # 7. Spending Velocity & Month-End Projections
+    if any(w in q for w in ["velocity", "project", "projection", "forecast", "run rate", "end of month", "pace", "burn rate"]):
+        latest_date_str = max((r.get("date", "2026-10-18") for r in receipts), default="2026-10-18")
+        day = int(latest_date_str.split("-")[2][:2]) if "-" in latest_date_str else 18
+        daily_pace = grand / max(day, 1)
+        projected = daily_pace * 30
+
         lines = [
-            f"### 🎯 Personalized Budget & Savings Plan ({period_lbl})",
-            f"Based on your actual purchasing patterns totaling **{curr}{grand:,.2f}**, here are 3 high-impact strategies:\n",
-            f"1. **Bulk Pantry Arbitrage**: Your highest individual purchase was *{top_name}* ({curr}{top_amt:,.2f}). Consolidating staples into bulk packs typically captures a **12–18% recurring price discount**.",
-            f"2. **Store Optimization**: You shopped across {len(store_totals)} stores. Prioritizing primary supermarkets for bulk goods and reserving specialty stores exclusively for niche items could save up to **{curr}{grand*0.12:,.2f}**.",
-            f"3. **Zero Waste Batching**: You averaged **{curr}{data.get('avg_per_receipt', 0.0):,.2f}** per shopping trip. Combining multiple weekly trips into planned bi-weekly runs reduces impulse add-on purchases by an estimated **8–10%**."
+            f"### Spending Velocity and Projections ({period_lbl})",
+            f"- **Cumulative Spend to Date:** {curr}{grand:,.2f} (through Day {day} of the period)",
+            f"- **Daily Burn Rate:** {curr}{daily_pace:,.2f} / day",
+            f"- **Projected Month-End Total:** **{curr}{projected:,.2f}** (30-day constant-velocity projection)",
+        ]
+        if data.get("prev_month"):
+            prev_total = data.get("prev_month_total", 0.0)
+            if prev_total > 0:
+                var_pct = ((projected - prev_total) / prev_total) * 100
+                lines.append(f"- **Baseline Comparison:** Projected run-rate is {abs(var_pct):.1f}% {'higher' if var_pct > 0 else 'lower'} than previous period ({curr}{prev_total:,.2f}).")
+        return "\n\n".join(lines)
+
+    # 8. Payment Method Distribution
+    if any(w in q for w in ["payment", "card", "upi", "cash", "net banking", "how did i pay"]):
+        pay_totals = defaultdict(float)
+        pay_counts = defaultdict(int)
+        for r in receipts:
+            m = r.get("payment_method") or "Unspecified"
+            pay_totals[m] += float(r.get("total", 0.0))
+            pay_counts[m] += 1
+
+        lines = [
+            f"### Payment Method Distribution ({period_lbl})",
+            "| Payment Method | Total Outflow | Share | Transaction Count | Avg / Transaction |",
+            "| :--- | :--- | :--- | :--- | :--- |"
+        ]
+        for m, amt in sorted(pay_totals.items(), key=lambda x: x[1], reverse=True):
+            pct = (amt / max(grand, 1.0)) * 100
+            cnt = pay_counts[m]
+            lines.append(f"| **{m}** | {curr}{amt:,.2f} | {pct:.1f}% | {cnt} | {curr}{amt/cnt:,.2f} |")
+        return "\n".join(lines)
+
+    # 9. Tax & Compliance Breakdown
+    if any(w in q for w in ["tax", "gst", "vat", "compliance"]):
+        total_tax = sum(float(r.get("tax", 0.0)) for r in receipts)
+        total_subtotal = sum(float(r.get("subtotal", 0.0)) for r in receipts)
+        eff_tax_rate = (total_tax / max(total_subtotal, 1.0)) * 100
+
+        lines = [
+            f"### Indirect Tax Breakdown ({period_lbl})",
+            f"- **Cumulative Tax (GST/VAT) Paid:** {curr}{total_tax:,.2f}",
+            f"- **Pre-Tax Subtotal:** {curr}{total_subtotal:,.2f}",
+            f"- **Gross Total:** {curr}{grand:,.2f}",
+            f"- **Effective Average Tax Rate:** {eff_tax_rate:.2f}% across {len(receipts)} audited transactions.",
         ]
         return "\n\n".join(lines)
 
-    # 6. Projection / Run-rate
-    if any(w in q for w in ["project", "forecast", "run rate", "end of month", "pace", "spend by end"]):
-        latest_date_str = max((r.get("date", "2026-10-18") for r in receipts), default="2026-10-18")
-        day = int(latest_date_str.split("-")[2][:2]) if "-" in latest_date_str else 18
-        projected = (grand / max(day, 1)) * 30
-        return (
-            f"### 📈 Spending Velocity Projection for {period_lbl}\n\n"
-            f"• **Current Total:** {curr}{grand:,.2f} through Day {day}\n"
-            f"• **Daily Velocity:** {curr}{grand/day:,.2f} / day\n"
-            f"• **Projected Month-End Spend:** **~{curr}{projected:,.2f}** (assuming constant velocity)\n\n"
-            f"*Tip: Keep track of mid-month discretionary spending to maintain your target budget.*"
-        )
+    # 10. Month-over-Month Comparisons & Historical Trends
+    if any(w in q for w in ["compare", "trend", "history", "previous", "august", "september", "october", "months"]):
+        from storage import get_available_months
+        avail = get_available_months()
+        lines = [
+            "### Historical Spending Velocity Overview",
+            "| Statement Month | Gross Expenditure | Audited Receipts | Primary Driver | MoM Change |",
+            "| :--- | :--- | :--- | :--- | :--- |"
+        ]
+        prev_amt = None
+        for m in sorted(avail):
+            m_data = get_monthly_data(m)
+            m_total = m_data.get("grand_total", 0.0)
+            m_cnt = m_data.get("receipt_count", 0)
+            m_top = m_data.get("top_category", "None")
+            mom_str = "Baseline"
+            if prev_amt is not None and prev_amt > 0:
+                diff = ((m_total - prev_amt) / prev_amt) * 100
+                mom_str = f"{'+' if diff > 0 else ''}{diff:.1f}%"
+            prev_amt = m_total
+            lines.append(f"| **{m}** | {curr}{m_total:,.2f} | {m_cnt} | {m_top} | {mom_str} |")
+        return "\n".join(lines)
 
-    # Fallback: Comprehensive AI Financial Advisory Brief
+    # 11. General Executive Financial Brief (Fallback)
+    top_store = max(store_totals, key=store_totals.get) if store_totals else "—"
+    top_store_val = max(store_totals.values()) if store_totals else 0.0
     return (
-        f"### 💡 AI Financial Advisor Brief ({period_lbl})\n\n"
-        f"• **Total Recorded Spend:** {curr}{grand:,.2f} across {len(receipts)} receipts\n"
-        f"• **Dominant Category:** {data.get('top_category', 'Food')} ({curr}{cat_totals.get(data.get('top_category', 'Food'), 0.0):,.2f})\n"
-        f"• **Top Merchant:** {max(store_totals, key=store_totals.get) if store_totals else '—'} ({curr}{max(store_totals.values()) if store_totals else 0:,.2f})\n"
-        f"• **Average Basket Size:** {curr}{data.get('avg_per_receipt', 0.0):,.2f} per shopping trip\n\n"
-        f"Try asking:\n"
-        f"- *'What was my biggest expense?'*\n"
-        f"- *'Break down my spending by category'* \n"
-        f"- *'How can I save money this month?'*\n"
-        f"- *'How much did I spend on Food?'*"
+        f"### Financial Summary ({period_lbl})\n\n"
+        f"| Metric | Value |\n"
+        f"| :--- | :--- |\n"
+        f"| Total Outflow | {curr}{grand:,.2f} |\n"
+        f"| Audited Receipts | {len(receipts)} transactions |\n"
+        f"| Line Items Acquired | {len(all_items)} products |\n"
+        f"| Average Ticket Size | {curr}{data.get('avg_per_receipt', 0.0):,.2f} / trip |\n"
+        f"| Primary Expense Category | {data.get('top_category', 'None')} ({curr}{cat_totals.get(data.get('top_category', ''), 0.0):,.2f}) |\n"
+        f"| Primary Merchant | {top_store} ({curr}{top_store_val:,.2f}) |\n\n"
+        f"Suggested Inquiries:\n"
+        f"- What was my largest purchase?\n"
+        f"- Break down spending by category\n"
+        f"- Analyze spending across merchants\n"
+        f"- Provide a 50/30/20 budget analysis\n"
+        f"- What are the highest impact savings opportunities?"
     )
 
 
