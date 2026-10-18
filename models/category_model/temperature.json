@@ -1,9 +1,9 @@
 {
-  "temperature": 1.11,
-  "ece_before": 0.1133,
-  "ece_after": 0.0749,
-  "nll_before": 1.2505,
-  "nll_after": 1.2231,
+  "temperature": 1.5296,
+  "ece_before": 0.2478,
+  "ece_after": 0.1142,
+  "nll_before": 1.629,
+  "nll_after": 1.4381,
   "num_classes": 15,
   "classes": [
     "Apparel",

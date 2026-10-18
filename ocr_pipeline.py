@@ -610,8 +610,16 @@ def parse_line_items(lines: List[dict]) -> List[ExtractedItem]:
         ]):
             continue
 
-        # 2. Skip contact info
+        # 1c. Skip restaurant & retail service metadata
+        if any(re.search(r"\b" + re.escape(kw) + r"\b", lower) for kw in [
+            "server", "station", "guests", "table", "reprint", "mgr", "manager", "seat", "chk", "order"
+        ]):
+            continue
+
+        # 2. Skip contact info and phone numbers
         if any(lower.startswith(kw) or f" {kw}:" in lower or f" {kw} " in lower for kw in CONTACT_KEYWORDS):
+            continue
+        if re.search(r"\b(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]\d{4}\b", raw_line):
             continue
 
         # 3. Skip table column headers
@@ -623,16 +631,26 @@ def parse_line_items(lines: List[dict]) -> List[ExtractedItem]:
         if any(re.search(r"\b" + re.escape(kw) + r"\b", lower) for kw in PAYMENT_TENDER_KEYWORDS):
             continue
 
+        # 4b. Skip suggested tips and gratuity lines (e.g. '18% 30.06' or 'Tip:')
+        if re.search(r"(?:^\s*[\d.]+\s*%\s*|tip\b|gratuity\b|suggested\s+tip)", lower):
+            continue
+
+        # 4c. Skip card authorization and terminal details
+        if any(re.search(r"\b" + re.escape(kw) + r"\b", lower) for kw in [
+            "approval", "auth", "acct", "aid", "appr", "seq", "entry method", "card #"
+        ]):
+            continue
+
         # 5. Skip summary rows (TOTAL, SUBTOTAL, ROUND OFF, TAX)
         if any(re.search(r"\b" + re.escape(kw) + r"\b", lower) for kw in [
             "subtotal", "sub total", "grand total", "net total", "net amount", "total", "round off"
         ]) or re.search(r"\b(cgst|sgst|igst|vat|tax|gst)\s*[\d(%]", lower):
             continue
 
-        # 6. Skip address and venue lines
+        # 6. Skip address and venue lines (including State + Zip code e.g. 'CA 90280' or 'FL 33176')
         if any(re.search(r"\b" + re.escape(kw) + r"\b", lower) for kw in [
             "plot", "road", "street", "avenue", "floor", "flr", "mall", "lane", "pincode", "zip", "abn", "acn"
-        ]):
+        ]) or re.search(r"\b[A-Z]{2}\.?\s+\d{5}(?:-\d{4})?\b", raw_line):
             continue
 
         # 7. Skip promotional non-priced tags e.g. 'SPECIAL'

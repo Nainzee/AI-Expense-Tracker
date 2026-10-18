@@ -61,6 +61,12 @@ def is_non_item_or_discount(text: str) -> bool:
     # 4. Summary rows (e.g., 'TOTAL', 'SUBTOTAL', 'GRAND TOTAL', 'GST', 'ROUND OFF')
     if re.search(r"^(?:subtotal|sub\s+total|grand\s+total|net\s+total|total(?:\s+due|\s+amount|\s+sale)?|round\s+off|gst|tax|vat)(?:\s*:|\s+|$)", t):
         return True
+    # 5. Service metadata, tip suggestions, and terminal info
+    if re.search(r"\b(?:server|station|guests|table|reprint|mgr|manager|seat|chk|gratuity|suggested tip)\b", t):
+        return True
+    # 6. Phone numbers and zip codes
+    if re.search(r"\b(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]\d{4}\b", t) or re.search(r"\b[A-Z]{2}\.?\s+\d{5}\b", text):
+        return True
     return False
 
 
@@ -108,7 +114,9 @@ KNOWLEDGE_BASE: Dict[str, List[str]] = {
         "red bull", "monster", "energy drink", "beer", "wine", "whiskey",
         "vodka", "lassi", "chaas", "buttermilk", "coconut water", "horlicks",
         "boost", "complan", "bournvita", "squash", "fruit syrup", "roohafza",
-        "cordial", "lemonade", "tonic water"
+        "cordial", "lemonade", "tonic water", "margarita", "manhattan",
+        "martini", "draft beer", "craft beer", "ipa", "rye", "bourbon",
+        "chardonnay", "iced tea", "fountain drink"
     ],
     "Bakery": [
         "bread", "brown bread", "white bread", "wholemeal", "whole wheat bread",
@@ -149,10 +157,14 @@ KNOWLEDGE_BASE: Dict[str, List[str]] = {
         "protein powder", "whey", "ors", "electral"
     ],
     "Dining": [
-        "pizza", "burger", "sandwich", "biryani", "biryani combo", "thali",
+        "pizza", "burger", "cheeseburger", "sandwich", "biryani", "biryani combo", "thali",
         "curry", "roti", "naan", "starter", "appetizer", "dessert", "ice cream",
         "pasta", "salad bowl", "soup", "buffet", "dine in", "takeaway", "latte",
-        "cappuccino", "espresso"
+        "cappuccino", "espresso", "ribeye", "sirloin", "steak", "filet mignon",
+        "chkn plate", "chicken plate", "combo plate", "wings", "buffalo wings",
+        "crab cakes", "lobster", "sashimi", "sushi", "poke bowl", "teriyaki",
+        "quesadilla", "burrito", "tacos", "hashbrowns", "french fries", "fries",
+        "calamari", "salmon collar", "hamachi collar", "t-bone"
     ],
     "Transportation": [
         # Fuel, Gas & EV

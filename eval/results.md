@@ -1,6 +1,6 @@
 # 📈 Empirical Evaluation & Model Benchmarks
 
-> **Last Updated**: 2026-10-18 19:45:29  
+> **Last Updated**: 2026-10-18 20:33:57  
 > **Evaluation Mode**: Held-out Ground-Truth Receipts (`eval/ground_truth.json`)  
 > **Hardware**: Apple Silicon / CPU Only  
 > **Reproducibility**: Run `python eval/benchmark.py` to regenerate all numbers.
@@ -27,12 +27,12 @@ Comparison of inference latency between classical spatial bounding-box OCR (Tess
 
 | OCR Engine | Execution Unit | Median Latency (p50) | 95th Percentile (p95) | Deployment Recommendation |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tesseract (Spatial Pipeline)** | Full Receipt Image | **231.1 ms** | **236.8 ms** | **Recommended default for live UI & CPU servers** (< 0.5s response). |
-| **TrOCR (Vision Transformer)** | Single Cropped Line | **1474.1 ms** | **3721.3 ms** | Selective fallback for degraded or handwritten lines. |
+| **Tesseract (Spatial Pipeline)** | Full Receipt Image | **247.9 ms** | **254.6 ms** | **Recommended default for live UI & CPU servers** (< 0.5s response). |
+| **TrOCR (Vision Transformer)** | Single Cropped Line | **1477.2 ms** | **5100.9 ms** | Selective fallback for degraded or handwritten lines. |
 
 > [!NOTE]
 > **Engineering Architectural Decision (Latency vs Accuracy Trade-off)**:
-> While TrOCR delivers high character recognition on degraded cursive text, its autoregressive beam search incurs ~1474 ms per line on CPU. For a 15-line receipt, full TrOCR inference requires ~18–25 seconds on CPU. Therefore, our pipeline utilizes **Tesseract spatial line clustering as the primary real-time engine**, deploying TrOCR selectively for low-confidence or degraded bounding boxes.
+> While TrOCR delivers high character recognition on degraded cursive text, its autoregressive beam search incurs ~1477 ms per line on CPU. For a 15-line receipt, full TrOCR inference requires ~18–25 seconds on CPU. Therefore, our pipeline utilizes **Tesseract spatial line clustering as the primary real-time engine**, deploying TrOCR selectively for low-confidence or degraded bounding boxes.
 
 ---
 
