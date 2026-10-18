@@ -120,6 +120,38 @@ class ParsedReceipt:
 
 
 # ─── Image Preprocessing & Computer Vision ──────────────────────────────────
+def locate_and_crop_receipt(cv_img: np.ndarray) -> np.ndarray:
+    """
+    Detect document boundaries against contrasting surfaces (e.g. wooden desk, dark table).
+    Crops away non-receipt background to maximize effective text resolution and prevent border artifacts.
+    """
+    h, w = cv_img.shape[:2]
+    gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY) if len(cv_img.shape) == 3 else cv_img
+    blurred = cv2.GaussianBlur(gray, (9, 9), 0)
+    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    border_pixels = np.concatenate([thresh[0, :], thresh[-1, :], thresh[:, 0], thresh[:, -1]])
+    dark_border_ratio = np.mean(border_pixels == 0)
+
+    # Only crop if there is a distinct dark background surrounding the receipt
+    if dark_border_ratio > 0.40:
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            largest = max(contours, key=cv2.contourArea)
+            area = cv2.contourArea(largest)
+            if area > (h * w * 0.15) and area < (h * w * 0.95):
+                rx, ry, rw, rh = cv2.boundingRect(largest)
+                pad_x = int(rw * 0.03)
+                pad_y = int(rh * 0.02)
+                rx0 = max(0, rx - pad_x)
+                ry0 = max(0, ry - pad_y)
+                rx1 = min(w, rx + rw + pad_x)
+                ry1 = min(h, ry + rh + pad_y)
+                if (rx1 - rx0) > 100 and (ry1 - ry0) > 100:
+                    return cv_img[ry0:ry1, rx0:rx1]
+    return cv_img
+
+
 def deskew_image(cv_img: np.ndarray) -> np.ndarray:
     """Detect and correct document skew using contour moments."""
     try:
@@ -154,29 +186,37 @@ def deskew_image(cv_img: np.ndarray) -> np.ndarray:
 def preprocess_receipt_image(image: Image.Image) -> Tuple[np.ndarray, np.ndarray]:
     """
     Apply multi-stage computer vision enhancement:
-    1. Dynamic upscaling for low-resolution inputs (< 1100px height).
-    2. Auto-deskewing.
-    3. Grayscale conversion + CLAHE contrast normalization.
-    4. Bilateral filtering to preserve text edges while removing sensor noise.
+    1. Automatic document localization (crops away background surface/table).
+    2. Dynamic upscaling for low-resolution inputs (< 1600px height).
+    3. Auto-deskewing.
+    4. Illumination flattening (background division to cancel phone shadows & paper wrinkles).
+    5. CLAHE contrast boost & bilateral edge-preserving denoising.
     Returns: (color_cv_image, enhanced_grayscale_image)
     """
     img_rgb = np.array(image.convert("RGB"))
     cv_color = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
 
+    # 1. Localize and crop receipt from background table/desk
+    cv_color = locate_and_crop_receipt(cv_color)
+
+    # 2. Dynamic upscaling for optimal OCR DPI (aim for >= 1600px height)
     h, w = cv_color.shape[:2]
-    if h < 1100:
-        scale = min(2.5, 1400.0 / max(h, 1))
+    if h < 1600:
+        scale = min(2.5, 1700.0 / max(h, 1))
         cv_color = cv2.resize(cv_color, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
-    # Deskew
+    # 3. Deskew
     cv_color = deskew_image(cv_color)
 
-    # Grayscale & CLAHE contrast boost
+    # 4. Illumination flattening & CLAHE contrast boost
     gray = cv2.cvtColor(cv_color, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
+    bg = cv2.GaussianBlur(gray, (45, 45), 0)
+    norm = cv2.divide(gray, bg, scale=255)
 
-    # Edge-preserving denoising
+    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+    enhanced = clahe.apply(norm)
+
+    # 5. Edge-preserving denoising
     denoised = cv2.bilateralFilter(enhanced, d=7, sigmaColor=50, sigmaSpace=50)
 
     return cv_color, denoised
@@ -250,18 +290,20 @@ def extract_lines_trocr(cv_color: np.ndarray) -> List[dict]:
     device = next(model.parameters()).device
 
     gray = cv2.cvtColor(cv_color, cv2.COLOR_BGR2GRAY)
-    _, bin_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    bin_inv = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 11
+    )
 
     h, w = gray.shape
-    kernel_w = max(20, w // 15)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_w, 3))
+    kernel_w = max(18, w // 25)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_w, 2))
     dilated = cv2.dilate(bin_inv, kernel, iterations=1)
 
     contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     line_boxes = []
     for cnt in contours:
         x, y, bw, bh = cv2.boundingRect(cnt)
-        if bw > 40 and 12 <= bh <= 120:
+        if bw > 30 and 10 <= bh <= 90:
             line_boxes.append((x, y, bw, bh))
 
     line_boxes.sort(key=lambda b: b[1])
@@ -408,8 +450,10 @@ TOTAL_KEYWORDS = {
 }
 
 PAYMENT_TENDER_KEYWORDS = {
-    "cash", "change", "eftpos", "tendered", "visa", "mastercard", "amex",
-    "debit", "credit", "card", "paid", "balance due", "cash tendered", "change due"
+    "cash", "change", "eftpos", "tender", "tendered", "visa", "mastercard",
+    "master card", "amex", "debit", "credit", "card", "paid", "balance due",
+    "cash tendered", "change due", "acct", "apprvl", "approval", "auth",
+    "mid", "tid", "aid", "chip read", "entry method"
 }
 
 
@@ -595,8 +639,13 @@ def parse_line_items(lines: List[dict]) -> List[ExtractedItem]:
         if lower in ["special", "promo", "on sale", "rollback"]:
             continue
 
-        # 8. Skip thank-you and footer lines
-        if any(kw in lower for kw in ["thank you", "visit again", "feedback", "saved today", "customer copy"]):
+        # 8. Skip thank-you, return policy, item counters, and pos terminal lines
+        if any(kw in lower for kw in [
+            "thank you", "visit again", "feedback", "saved today", "customer copy",
+            "have a great day", "come again", "food universe", "returns must be",
+            "return policy", "package for return", "number of items", "item count",
+            "total items", "trx:", "term:", "register", "terminal"
+        ]):
             continue
 
         # ── Check for Weight / Scale Line e.g. "0.778 kg NET @ $5.99/kg $4.66" ─
