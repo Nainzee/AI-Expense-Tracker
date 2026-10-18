@@ -474,7 +474,7 @@ def on_select_repo_row(evt: gr.SelectData, df):
     return ""
 
 
-# ─── Modern FinTech Custom CSS ──────────────────────────────────────────────
+# ─── Modern FinTech Custom CSS (Zinc & Emerald Minimalist) ────────────────────
 CUSTOM_CSS = """
 /* Container & Global Reset */
 .gradio-container {
@@ -483,29 +483,36 @@ CUSTOM_CSS = """
     font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif !important;
 }
 
+/* Linear / Vercel Matte Dark Base */
+body, .gradio-container {
+    background-color: #09090b !important;
+    color: #f4f4f5 !important;
+}
+
 /* FinTech Navbar Header */
 .app-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 18px 24px;
-    background: linear-gradient(135deg, #0b0f19 0%, #1e293b 100%);
-    border: 1px solid #334155;
-    border-radius: 14px;
+    background: linear-gradient(180deg, #18181b 0%, #121215 100%);
+    border: 1px solid #27272a;
+    border-radius: 12px;
     margin-bottom: 22px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
 }
 .app-title {
     font-size: 22px;
     font-weight: 700;
-    color: #f8fafc;
-    letter-spacing: -0.5px;
+    color: #fafafa;
+    letter-spacing: -0.03em;
     display: flex;
     align-items: center;
     gap: 8px;
 }
 .app-subtitle {
     font-size: 13px;
-    color: #94a3b8;
+    color: #a1a1aa;
     margin-top: 3px;
 }
 .app-badges {
@@ -517,45 +524,58 @@ CUSTOM_CSS = """
     font-weight: 600;
     padding: 4px 10px;
     border-radius: 9999px;
-    background: rgba(16, 185, 129, 0.12);
+    background: rgba(16, 185, 129, 0.08);
     color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    letter-spacing: 0.02em;
 }
 
 /* KPI Metric Cards Grid */
 .metric-card {
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-    border: 1px solid #334155;
+    background: linear-gradient(180deg, #18181b 0%, #111113 100%);
+    border: 1px solid #27272a;
     border-radius: 12px;
     padding: 16px 20px;
     text-align: left;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
     transition: transform 0.15s ease, border-color 0.15s ease;
+    position: relative;
+    overflow: hidden;
+}
+.metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
 }
 .metric-card:hover {
-    border-color: #10b981;
+    border-color: #3f3f46;
 }
 .metric-label {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #94a3b8;
+    letter-spacing: 0.06em;
+    color: #a1a1aa;
 }
 .metric-val {
-    font-size: 24px;
+    font-size: 25px;
     font-weight: 800;
-    color: #f8fafc;
+    color: #fafafa;
     margin-top: 4px;
-    letter-spacing: -0.5px;
+    letter-spacing: -0.03em;
 }
 .metric-sub {
     font-size: 12px;
     margin-top: 3px;
+    font-weight: 500;
 }
-.trend-up { color: #f43f5e; font-weight: 600; }
-.trend-down { color: #10b981; font-weight: 600; }
-.trend-neutral { color: #38bdf8; font-weight: 500; }
+.trend-up { color: #fb7185; }
+.trend-down { color: #34d399; }
+.trend-neutral { color: #a1a1aa; }
 
 /* Status Badges */
 .recon-pill-verified {
@@ -566,9 +586,9 @@ CUSTOM_CSS = """
     border-radius: 9999px;
     font-size: 13px;
     font-weight: 600;
-    background: rgba(16, 185, 129, 0.15);
+    background: rgba(16, 185, 129, 0.1);
     color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.4);
+    border: 1px solid rgba(16, 185, 129, 0.3);
 }
 .recon-pill-warning {
     display: inline-flex;
@@ -578,9 +598,9 @@ CUSTOM_CSS = """
     border-radius: 9999px;
     font-size: 13px;
     font-weight: 600;
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(245, 158, 11, 0.1);
     color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.4);
+    border: 1px solid rgba(245, 158, 11, 0.3);
 }
 .recon-pill-neutral {
     display: inline-flex;
@@ -590,13 +610,13 @@ CUSTOM_CSS = """
     border-radius: 9999px;
     font-size: 13px;
     font-weight: 600;
-    background: rgba(51, 65, 85, 0.5);
-    color: #cbd5e1;
-    border: 1px solid #475569;
+    background: #18181b;
+    color: #a1a1aa;
+    border: 1px solid #27272a;
 }
 .dot {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: currentColor;
 }
@@ -610,50 +630,53 @@ CUSTOM_CSS = """
     margin-top: 8px;
 }
 .notice-box.success {
-    background: rgba(16, 185, 129, 0.1);
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.25);
     color: #34d399;
 }
 .notice-box.alert {
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
     color: #fbbf24;
 }
 .notice-box.warning {
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
     color: #fbbf24;
 }
 .notice-box.error {
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
     color: #f87171;
 }
 .notice-box.neutral {
-    background: rgba(51, 65, 85, 0.3);
-    border: 1px solid #334155;
-    color: #94a3b8;
+    background: #18181b;
+    border: 1px solid #27272a;
+    color: #a1a1aa;
 }
 
 /* Insight Cards */
 .insight-card {
-    background: #1e293b;
-    border-left: 4px solid #10b981;
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-left: 3px solid #10b981;
     padding: 12px 16px;
-    border-radius: 0 8px 8px 0;
+    border-radius: 6px;
     font-size: 13px;
     line-height: 1.45;
-    color: #e2e8f0;
+    color: #e4e4e7;
+    margin-bottom: 8px;
 }
 .insight-card.alert {
-    border-left-color: #ef4444;
-    background: rgba(239, 68, 68, 0.08);
+    border-left-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.05);
 }
 .insight-card.health {
-    border-left-color: #38bdf8;
+    border-left-color: #10b981;
+    background: rgba(16, 185, 129, 0.05);
 }
 .insight-card.forecast {
-    border-left-color: #a855f7;
+    border-left-color: #34d399;
 }
 
 /* Calculated Total Pill */
@@ -668,25 +691,68 @@ CUSTOM_CSS = """
     color: #f87171;
 }
 
+/* Linear/Vercel Component Borders & Accents */
+div[data-testid="block"] {
+    background: #121215 !important;
+    border: 1px solid #27272a !important;
+    border-radius: 10px !important;
+}
+
+button.primary {
+    background: #10b981 !important;
+    color: #09090b !important;
+    font-weight: 600 !important;
+    border: none !important;
+    transition: background 0.15s ease !important;
+}
+button.primary:hover {
+    background: #34d399 !important;
+}
+
+/* Table Styling */
+table {
+    border-color: #27272a !important;
+}
+th {
+    background-color: #18181b !important;
+    color: #a1a1aa !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
+td {
+    border-color: #27272a !important;
+    color: #e4e4e7 !important;
+}
+
 footer { display: none !important; }
 """
 
 # ─── Custom Theme ───────────────────────────────────────────────────────────
 fintech_theme = gr.themes.Soft(
     primary_hue="emerald",
-    secondary_hue="indigo",
-    neutral_hue="slate",
-    font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui"]
+    secondary_hue="zinc",
+    neutral_hue="zinc",
+    font=[gr.themes.GoogleFont("Inter")]
 ).set(
-    body_background_fill="#0b0f19",
-    body_background_fill_dark="#0b0f19",
-    block_background_fill="#111827",
-    block_background_fill_dark="#111827",
-    block_border_color="#1f2937",
-    block_border_color_dark="#1f2937",
-    button_primary_background_fill="#059669",
-    button_primary_background_fill_hover="#10b981",
+    body_background_fill="#09090b",
+    body_background_fill_dark="#09090b",
+    block_background_fill="#121215",
+    block_background_fill_dark="#121215",
+    block_border_color="#27272a",
+    block_border_color_dark="#27272a",
+    input_background_fill="#18181b",
+    input_background_fill_dark="#18181b",
+    input_border_color="#27272a",
+    input_border_color_dark="#27272a",
+    button_primary_background_fill="#10b981",
+    button_primary_background_fill_hover="#059669",
     button_primary_text_color="#ffffff",
+    button_secondary_background_fill="#18181b",
+    button_secondary_background_fill_hover="#27272a",
+    button_secondary_text_color="#e4e4e7",
+    button_secondary_border_color="#27272a",
+    button_secondary_border_color_dark="#27272a",
 )
 
 # ─── Gradio Application Definition ──────────────────────────────────────────
