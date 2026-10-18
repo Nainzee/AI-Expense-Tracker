@@ -1,0 +1,65 @@
+{
+  "sample_grocery": {
+    "image_path": "sample_receipts/sample_grocery.png",
+    "store_name": "SUPERMART RETAIL",
+    "date": "2026-10-18",
+    "currency": "₹",
+    "subtotal": 1285.00,
+    "tax": 64.25,
+    "grand_total": 1349.25,
+    "items": [
+      {"item_name": "Basmati Rice 5kg", "amount": 340.00, "category": "Food"},
+      {"item_name": "Sunflower Oil 1L", "amount": 165.00, "category": "Food"},
+      {"item_name": "Amul Butter 500g", "amount": 275.00, "category": "Food"},
+      {"item_name": "Tata Tea Gold 500g", "amount": 290.00, "category": "Drinks"},
+      {"item_name": "Colgate Toothpaste", "amount": 95.00, "category": "Personal Care"},
+      {"item_name": "Dettol Handwash", "amount": 120.00, "category": "Personal Care"}
+    ]
+  },
+  "sample_pharmacy": {
+    "image_path": "sample_receipts/sample_pharmacy.png",
+    "store_name": "APOLLO MEDPLUS PHARMACY",
+    "date": "2026-10-17",
+    "currency": "₹",
+    "subtotal": 415.50,
+    "tax": 49.86,
+    "grand_total": 465.36,
+    "items": [
+      {"item_name": "Dolo 650 Tablets 15s", "amount": 32.50, "category": "Medical"},
+      {"item_name": "Benadryl Cough Syrup", "amount": 115.00, "category": "Medical"},
+      {"item_name": "Vitamin C Chewable", "amount": 145.00, "category": "Medical"},
+      {"item_name": "Dettol Antiseptic 100ml", "amount": 78.00, "category": "Medical"},
+      {"item_name": "Band-Aid Washproof 10s", "amount": 45.00, "category": "Medical"}
+    ]
+  },
+  "sample_dining": {
+    "image_path": "sample_receipts/sample_dining.png",
+    "store_name": "THE ARTISAN CAFE & BISTRO",
+    "date": "2026-10-16",
+    "currency": "₹",
+    "subtotal": 1180.00,
+    "tax": 59.00,
+    "grand_total": 1239.00,
+    "items": [
+      {"item_name": "Artisan Cappuccino x2", "amount": 360.00, "category": "Drinks"},
+      {"item_name": "Margherita Pizza 10-inch", "amount": 420.00, "category": "Dining"},
+      {"item_name": "Garlic Herb Bread", "amount": 180.00, "category": "Bakery"},
+      {"item_name": "Warm Chocolate Brownie", "amount": 220.00, "category": "Bakery"}
+    ]
+  },
+  "sample_electronics": {
+    "image_path": "sample_receipts/sample_electronics.png",
+    "store_name": "DIGITAL TECH HUB",
+    "date": "2026-10-15",
+    "currency": "₹",
+    "subtotal": 2196.00,
+    "tax": 395.28,
+    "grand_total": 2591.28,
+    "items": [
+      {"item_name": "Braided USB-C Cable 2M", "amount": 399.00, "category": "Electronics"},
+      {"item_name": "Wireless Silent Mouse", "amount": 699.00, "category": "Electronics"},
+      {"item_name": "Fast Charging Adapter 30W", "amount": 899.00, "category": "Electronics"},
+      {"item_name": "Microfiber Cleaning Kit", "amount": 199.00, "category": "Household"}
+    ]
+  }
+}
