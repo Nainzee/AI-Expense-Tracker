@@ -1,0 +1,25 @@
+{
+  "temperature": 1.11,
+  "ece_before": 0.1133,
+  "ece_after": 0.0749,
+  "nll_before": 1.2505,
+  "nll_after": 1.2231,
+  "num_classes": 15,
+  "classes": [
+    "Apparel",
+    "Bakery",
+    "Dining",
+    "Drinks",
+    "Electronics",
+    "Entertainment",
+    "Food",
+    "Home & Hardware",
+    "Household",
+    "Medical",
+    "Office & Stationery",
+    "Other",
+    "Personal Care",
+    "Transportation",
+    "Utilities"
+  ]
+}

@@ -61,6 +61,36 @@ def augment_train_item(item_name: str, category: str) -> list[str]:
             f"cold {item_name}",
             f"{item_name} bottle",
         ])
+    elif category == "Dining":
+        variants.extend([
+            f"{item_name} combo",
+            f"{item_name} meal",
+            f"order {item_name}",
+        ])
+    elif category == "Transportation":
+        variants.extend([
+            f"{item_name} fare",
+            f"{item_name} booking",
+            f"{item_name} ticket",
+        ])
+    elif category == "Entertainment":
+        variants.extend([
+            f"{item_name} pass",
+            f"{item_name} subscription",
+            f"{item_name} ticket",
+        ])
+    elif category == "Utilities":
+        variants.extend([
+            f"{item_name} payment",
+            f"{item_name} monthly",
+            f"{item_name} recharge",
+        ])
+    elif category in ["Electronics", "Home & Hardware", "Office & Stationery"]:
+        variants.extend([
+            f"{item_name} set",
+            f"{item_name} pack",
+            f"new {item_name}",
+        ])
     elif category == "Other":
         variants.extend([
             f"qty 1 {item_name}",
@@ -116,7 +146,7 @@ class TemperatureScaler(nn.Module):
         return logits / self.temperature
 
     def calibrate(self, logits: torch.Tensor, labels: torch.Tensor) -> float:
-        """Find optimal temperature on validation set using NLL loss."""
+        """Find optimal temperature on validation set balancing NLL loss and ECE."""
         self.temperature.data.fill_(1.0)
         optimizer = torch.optim.LBFGS([self.temperature], lr=0.02, max_iter=50, line_search_fn="strong_wolfe")
         criterion = nn.CrossEntropyLoss()
@@ -131,6 +161,31 @@ class TemperatureScaler(nn.Module):
         optimizer.step(_step)
         with torch.no_grad():
             self.temperature.clamp_(min=0.1, max=10.0)
+
+        # Verify ECE reduction; if LBFGS over-smoothes or bin boundaries increase discrete ECE,
+        # search over grid around optimum to find temperature that minimizes ECE while keeping NLL <= base_nll
+        with torch.no_grad():
+            targets = labels.cpu().numpy()
+            uncal_probs = torch.softmax(logits, dim=1).cpu().numpy()
+            base_ece = compute_ece(uncal_probs, targets)
+            base_nll = criterion(logits, labels).item()
+
+            cal_probs = torch.softmax(self.forward(logits), dim=1).cpu().numpy()
+            cal_ece = compute_ece(cal_probs, targets)
+
+            if cal_ece > base_ece:
+                best_t = 1.0
+                best_ece = base_ece
+                for candidate_t in np.linspace(0.8, 1.4, 61):
+                    cand_scaled = logits / candidate_t
+                    cand_probs = torch.softmax(cand_scaled, dim=1).cpu().numpy()
+                    cand_ece = compute_ece(cand_probs, targets)
+                    cand_nll = criterion(cand_scaled, labels).item()
+                    if cand_ece <= best_ece and cand_nll <= base_nll + 1e-4:
+                        best_ece = cand_ece
+                        best_t = float(candidate_t)
+                self.temperature.data.fill_(best_t)
+
         return float(self.temperature.item())
 
 

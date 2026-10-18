@@ -25,7 +25,12 @@ import pandas as pd
 import gradio as gr
 
 from ocr_pipeline import extract_receipt_items
-from categorizer import categorize_items, CANONICAL_CATEGORIES, retrain_personalized_classifier
+from categorizer import (
+    categorize_items,
+    CANONICAL_CATEGORIES,
+    retrain_personalized_classifier,
+    predict_with_distilbert
+)
 from monthly_summary import (
     save_receipt,
     get_monthly_data,
@@ -74,7 +79,7 @@ def make_recon_badge(status_text: str, diff: float = 0.0, curr: str = "₹") -> 
 
 
 # ─── Tab 1: Scanning & Line-Item Verification ────────────────────────────────
-def scan_receipt_action(image, engine_choice: str):
+def scan_receipt_action(image, engine_choice: str, categorizer_choice: str = "Hybrid Multi-Tier (Rules + Memory + DistilBERT)"):
     """
     Perform end-to-end receipt extraction with currency and metadata extraction.
     """
@@ -106,9 +111,10 @@ def scan_receipt_action(image, engine_choice: str):
             no_items_badge, empty_df, annotated_img, raw_text, warn_msg
         )
 
-    # Classify items
+    # Classify items using chosen engine (Hybrid or pure DistilBERT)
+    cat_mode = "distilbert" if "Pure DistilBERT" in str(categorizer_choice) else "hybrid"
     try:
-        categorized = categorize_items(raw_items)
+        categorized = categorize_items(raw_items, mode=cat_mode)
     except Exception:
         categorized = raw_items
 
@@ -164,6 +170,46 @@ def scan_receipt_action(image, engine_choice: str):
         )
 
     return store, date_val, subtotal_val, tax_val, total_val, curr, recon_badge_html, df, annotated_img, raw_text, status_html
+
+
+def test_distilbert_action(item_text: str) -> str:
+    """Interactive sandbox tester for DistilBERT sequence classifier."""
+    if not item_text or not item_text.strip():
+        return "<div class='notice-box neutral'>Enter any product description (e.g. <i>'Organic Whole Wheat Bread'</i> or <i>'Uber Trip Fare'</i>) to test DistilBERT.</div>"
+    try:
+        res = predict_with_distilbert(item_text)
+        top3_rows = "".join(
+            f"<tr style='border-bottom: 1px solid #1e293b;'><td style='padding: 6px 10px;'><b>{t['category']}</b></td><td style='padding: 6px 10px; text-align: right; color: #38bdf8;'><b>{t['probability']:.1f}%</b></td></tr>"
+            for t in res.get("top3", [])
+        )
+        return f"""
+        <div style='background: #0f172a; border: 1px solid #1e2d4d; border-radius: 8px; padding: 16px; margin-top: 6px;'>
+            <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
+                <div>
+                    <span style='color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;'>DistilBERT Prediction</span>
+                    <div style='color: #f8fafc; font-size: 20px; font-weight: 700; margin-top: 2px;'>🎯 {res['predicted_category']}</div>
+                </div>
+                <div style='text-align: right;'>
+                    <span style='color: #94a3b8; font-size: 11px;'>Calibrated Confidence (T* = {res['temperature']})</span>
+                    <div style='color: #10b981; font-size: 20px; font-weight: 700;'>{res['calibrated_confidence']}%</div>
+                </div>
+            </div>
+            <div style='font-size: 12px; color: #94a3b8; margin-bottom: 12px;'>
+                Raw Softmax Probability: <b>{res['raw_confidence']}%</b> • CPU Inference Latency: <b>{res['latency_ms']} ms</b>
+            </div>
+            <table style='width: 100%; border-collapse: collapse; font-size: 12.5px; color: #cbd5e1;'>
+                <thead>
+                    <tr style='border-bottom: 2px solid #334155; color: #94a3b8; text-align: left;'>
+                        <th style='padding: 6px 10px;'>Top Candidate Classes</th>
+                        <th style='padding: 6px 10px; text-align: right;'>Probability</th>
+                    </tr>
+                </thead>
+                <tbody>{top3_rows}</tbody>
+            </table>
+        </div>
+        """
+    except Exception as exc:
+        return f"<div class='notice-box error'>❌ DistilBERT Inference Error: {str(exc)}</div>"
 
 
 def recompute_items_total(df: pd.DataFrame, curr: str) -> str:
@@ -868,6 +914,13 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                         info="Tesseract clusters layout-aware lines; TrOCR performs deep sequence generation"
                     )
 
+                    categorizer_select = gr.Radio(
+                        label="Categorization Model",
+                        choices=["Hybrid Multi-Tier (Rules + Memory + DistilBERT)", "Pure DistilBERT Neural (Transformer Only)"],
+                        value="Hybrid Multi-Tier (Rules + Memory + DistilBERT)",
+                        info="Hybrid achieves sub-ms speeds with DistilBERT fallback; Pure DistilBERT executes fine-tuned transformer on all items"
+                    )
+
                     scan_btn = gr.Button("⚡ Scan & Extract Receipt", variant="primary", size="lg")
 
                 # Right Column: Extracted Receipt Summary
@@ -924,6 +977,47 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
             save_feedback = gr.HTML("")
 
             # Collapsible Advanced Sections
+            with gr.Accordion("🤖 Interactive DistilBERT Classifier Sandbox & Inspector", open=False):
+                gr.Markdown("""
+                **Inspect the fine-tuned DistilBERT neural sequence classifier in real time:**  
+                Enter any item description or novel brand to evaluate its predicted category, calibrated confidence, 
+                temperature scaling factor ($T^*$), candidate class probability distribution, and CPU latency.
+                """)
+                with gr.Row():
+                    distilbert_input = gr.Textbox(
+                        label="Item Description to Classify",
+                        placeholder="e.g. 'Apple iPhone Fast Charger', 'Uber Ride to Airport', 'Whole Wheat Sourdough Bread'",
+                        scale=4
+                    )
+                    test_distilbert_btn = gr.Button("⚡ Classify with DistilBERT", variant="primary", scale=1)
+
+                distilbert_result_box = gr.HTML("<div class='notice-box neutral'>Enter an item description above and click <b>Classify with DistilBERT</b>.</div>")
+
+                gr.Examples(
+                    examples=[
+                        ["Apple iPhone Fast Charger"],
+                        ["Uber Ride to Airport"],
+                        ["Netflix Premium 4K Subscription"],
+                        ["Bescom Electricity Bill Payment"],
+                        ["Claw Hammer 16oz Steel"],
+                        ["Spiral Notebook A4 200 Pages"],
+                        ["Dolo 650 Tablets 15s"],
+                        ["Organic Whole Wheat Sourdough Bread"],
+                    ],
+                    inputs=[distilbert_input]
+                )
+
+                test_distilbert_btn.click(
+                    fn=test_distilbert_action,
+                    inputs=[distilbert_input],
+                    outputs=[distilbert_result_box]
+                )
+                distilbert_input.submit(
+                    fn=test_distilbert_action,
+                    inputs=[distilbert_input],
+                    outputs=[distilbert_result_box]
+                )
+
             with gr.Accordion("🧠 Active Learning & Personalization Engine", open=False):
                 gr.Markdown(
                     "The system continuously learns from your category adjustments. Every confirmed edit is stored in your "
@@ -949,7 +1043,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
 
             scan_btn.click(
                 fn=scan_receipt_action,
-                inputs=[image_input, engine_select],
+                inputs=[image_input, engine_select, categorizer_select],
                 outputs=[
                     store_name_in, date_in, subtotal_in, tax_in, total_in, currency_in, recon_badge,
                     items_editor, annotated_preview, raw_ocr_output, status_banner

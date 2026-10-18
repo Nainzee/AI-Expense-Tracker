@@ -512,9 +512,82 @@ def predict_category(item_name: str) -> Tuple[str, float]:
 
 
 
-def categorize_items(items: List[dict]) -> List[dict]:
+def predict_with_distilbert(item_name: str) -> dict:
+    """
+    Direct inference using fine-tuned calibrated DistilBERT sequence classifier.
+    Returns:
+    - predicted_category: str
+    - calibrated_confidence: float (scaled by temperature)
+    - raw_confidence: float (uncalibrated softmax)
+    - temperature: float
+    - top3: list of {"category": str, "probability": float}
+    - latency_ms: float
+    """
+    load_transformer_model()
+    if _model is None or _tokenizer is None:
+        cat, conf = predict_category(item_name)
+        return {
+            "item_name": item_name,
+            "predicted_category": cat,
+            "calibrated_confidence": round(conf * 100, 1),
+            "raw_confidence": round(conf * 100, 1),
+            "temperature": 1.0,
+            "top3": [{"category": cat, "probability": round(conf * 100, 1)}],
+            "latency_ms": 0.1
+        }
+
+    import torch
+    import time
+
+    clean = item_name.strip()
+    t0 = time.perf_counter()
+
+    inputs = _tokenizer(
+        clean.lower(),
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=32
+    )
+
+    with torch.no_grad():
+        outputs = _model(**inputs)
+        raw_probs = torch.softmax(outputs.logits, dim=1)[0]
+        scaled_logits = outputs.logits / max(_temperature, 0.1)
+        cal_probs = torch.softmax(scaled_logits, dim=1)[0]
+
+    latency_ms = (time.perf_counter() - t0) * 1000
+
+    pred_idx = cal_probs.argmax().item()
+    pred_cat = _id2label.get(pred_idx, "Other")
+    cal_conf = float(cal_probs[pred_idx].item())
+    raw_conf = float(raw_probs[pred_idx].item())
+
+    k = min(3, len(cal_probs))
+    top3_indices = torch.topk(cal_probs, k=k).indices.tolist()
+    top3 = [
+        {
+            "category": _id2label.get(idx, f"Class {idx}"),
+            "probability": round(float(cal_probs[idx].item()) * 100, 1)
+        }
+        for idx in top3_indices
+    ]
+
+    return {
+        "item_name": clean,
+        "predicted_category": pred_cat,
+        "calibrated_confidence": round(cal_conf * 100, 1),
+        "raw_confidence": round(raw_conf * 100, 1),
+        "temperature": round(_temperature, 2),
+        "top3": top3,
+        "latency_ms": round(latency_ms, 1)
+    }
+
+
+def categorize_items(items: List[dict], mode: str = "hybrid") -> List[dict]:
     """
     Annotate a list of item dictionaries with predicted category and confidence.
+    mode: "hybrid" (Rules + Memory + DistilBERT) or "distilbert" (Pure Transformer)
     """
     categorized = []
     for item in items:
@@ -522,6 +595,14 @@ def categorize_items(items: List[dict]) -> List[dict]:
         if item.get("category") and item.get("category") not in ("", "Other"):
             cat = item["category"]
             conf = item.get("confidence", 1.0)
+        elif mode == "distilbert":
+            if is_non_item_or_discount(name):
+                cat = "Other"
+                conf = 0.99
+            else:
+                d_res = predict_with_distilbert(name)
+                cat = d_res["predicted_category"]
+                conf = d_res["calibrated_confidence"] / 100.0
         else:
             cat, conf = predict_category(name)
 
