@@ -474,7 +474,7 @@ def on_select_repo_row(evt: gr.SelectData, df):
     return ""
 
 
-# ─── Modern FinTech Custom CSS (Zinc & Emerald Minimalist) ────────────────────
+# ─── Modern FinTech Custom CSS (Deep Sapphire Navy) ─────────────────────────
 CUSTOM_CSS = """
 /* Container & Global Reset */
 .gradio-container {
@@ -483,10 +483,10 @@ CUSTOM_CSS = """
     font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif !important;
 }
 
-/* Linear / Vercel Matte Dark Base */
+/* Deep Sapphire Navy Canvas */
 body, .gradio-container {
-    background-color: #09090b !important;
-    color: #f4f4f5 !important;
+    background-color: #0a0f1d !important;
+    color: #f1f5f9 !important;
 }
 
 /* FinTech Navbar Header */
@@ -495,16 +495,16 @@ body, .gradio-container {
     justify-content: space-between;
     align-items: center;
     padding: 18px 24px;
-    background: linear-gradient(180deg, #18181b 0%, #121215 100%);
-    border: 1px solid #27272a;
+    background: linear-gradient(180deg, #131d38 0%, #0f172a 100%);
+    border: 1px solid #1e2d4d;
     border-radius: 12px;
     margin-bottom: 22px;
-    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 20px -2px rgba(2, 6, 23, 0.6);
 }
 .app-title {
     font-size: 22px;
     font-weight: 700;
-    color: #fafafa;
+    color: #f8fafc;
     letter-spacing: -0.03em;
     display: flex;
     align-items: center;
@@ -512,7 +512,7 @@ body, .gradio-container {
 }
 .app-subtitle {
     font-size: 13px;
-    color: #a1a1aa;
+    color: #94a3b8;
     margin-top: 3px;
 }
 .app-badges {
@@ -524,21 +524,21 @@ body, .gradio-container {
     font-weight: 600;
     padding: 4px 10px;
     border-radius: 9999px;
-    background: rgba(16, 185, 129, 0.08);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.25);
+    background: rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.28);
     letter-spacing: 0.02em;
 }
 
 /* KPI Metric Cards Grid */
 .metric-card {
-    background: linear-gradient(180deg, #18181b 0%, #111113 100%);
-    border: 1px solid #27272a;
+    background: linear-gradient(180deg, #131d38 0%, #0d1527 100%);
+    border: 1px solid #1e2d4d;
     border-radius: 12px;
     padding: 16px 20px;
     text-align: left;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-    transition: transform 0.15s ease, border-color 0.15s ease;
+    box-shadow: 0 4px 14px rgba(2, 6, 23, 0.5);
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     position: relative;
     overflow: hidden;
 }
@@ -549,22 +549,23 @@ body, .gradio-container {
     left: 0;
     right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+    background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.35), transparent);
 }
 .metric-card:hover {
-    border-color: #3f3f46;
+    border-color: #3b82f6;
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.15);
 }
 .metric-label {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #a1a1aa;
+    color: #94a3b8;
 }
 .metric-val {
     font-size: 25px;
     font-weight: 800;
-    color: #fafafa;
+    color: #f8fafc;
     margin-top: 4px;
     letter-spacing: -0.03em;
 }
@@ -575,7 +576,7 @@ body, .gradio-container {
 }
 .trend-up { color: #fb7185; }
 .trend-down { color: #34d399; }
-.trend-neutral { color: #a1a1aa; }
+.trend-neutral { color: #94a3b8; }
 
 /* Status Badges */
 .recon-pill-verified {
@@ -586,9 +587,9 @@ body, .gradio-container {
     border-radius: 9999px;
     font-size: 13px;
     font-weight: 600;
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(16, 185, 129, 0.12);
     color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    border: 1px solid rgba(16, 185, 129, 0.35);
 }
 .recon-pill-warning {
     display: inline-flex;
@@ -598,9 +599,9 @@ body, .gradio-container {
     border-radius: 9999px;
     font-size: 13px;
     font-weight: 600;
-    background: rgba(245, 158, 11, 0.1);
+    background: rgba(245, 158, 11, 0.12);
     color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    border: 1px solid rgba(245, 158, 11, 0.35);
 }
 .recon-pill-neutral {
     display: inline-flex;
@@ -610,9 +611,9 @@ body, .gradio-container {
     border-radius: 9999px;
     font-size: 13px;
     font-weight: 600;
-    background: #18181b;
-    color: #a1a1aa;
-    border: 1px solid #27272a;
+    background: #131d38;
+    color: #94a3b8;
+    border: 1px solid #1e2d4d;
 }
 .dot {
     width: 7px;
@@ -650,33 +651,33 @@ body, .gradio-container {
     color: #f87171;
 }
 .notice-box.neutral {
-    background: #18181b;
-    border: 1px solid #27272a;
-    color: #a1a1aa;
+    background: #131d38;
+    border: 1px solid #1e2d4d;
+    color: #94a3b8;
 }
 
 /* Insight Cards */
 .insight-card {
-    background: #18181b;
-    border: 1px solid #27272a;
-    border-left: 3px solid #10b981;
+    background: #131d38;
+    border: 1px solid #1e2d4d;
+    border-left: 3px solid #3b82f6;
     padding: 12px 16px;
     border-radius: 6px;
     font-size: 13px;
     line-height: 1.45;
-    color: #e4e4e7;
+    color: #e2e8f0;
     margin-bottom: 8px;
 }
 .insight-card.alert {
     border-left-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.05);
+    background: rgba(245, 158, 11, 0.06);
 }
 .insight-card.health {
     border-left-color: #10b981;
-    background: rgba(16, 185, 129, 0.05);
+    background: rgba(16, 185, 129, 0.06);
 }
 .insight-card.forecast {
-    border-left-color: #34d399;
+    border-left-color: #818cf8;
 }
 
 /* Calculated Total Pill */
@@ -684,45 +685,45 @@ body, .gradio-container {
     padding: 8px 14px;
     font-size: 15px;
     font-weight: 700;
-    color: #34d399;
+    color: #38bdf8;
     display: inline-block;
 }
 .calc-total-pill.error {
     color: #f87171;
 }
 
-/* Linear/Vercel Component Borders & Accents */
+/* Deep Navy Component Containers & Accents */
 div[data-testid="block"] {
-    background: #121215 !important;
-    border: 1px solid #27272a !important;
+    background: #0f172a !important;
+    border: 1px solid #1e293b !important;
     border-radius: 10px !important;
 }
 
 button.primary {
-    background: #10b981 !important;
-    color: #09090b !important;
+    background: #2563eb !important;
+    color: #ffffff !important;
     font-weight: 600 !important;
     border: none !important;
     transition: background 0.15s ease !important;
 }
 button.primary:hover {
-    background: #34d399 !important;
+    background: #3b82f6 !important;
 }
 
 /* Table Styling */
 table {
-    border-color: #27272a !important;
+    border-color: #1e293b !important;
 }
 th {
-    background-color: #18181b !important;
-    color: #a1a1aa !important;
+    background-color: #131d38 !important;
+    color: #94a3b8 !important;
     font-size: 11px !important;
     text-transform: uppercase !important;
     letter-spacing: 0.05em !important;
 }
 td {
-    border-color: #27272a !important;
-    color: #e4e4e7 !important;
+    border-color: #1e293b !important;
+    color: #e2e8f0 !important;
 }
 
 footer { display: none !important; }
@@ -730,29 +731,29 @@ footer { display: none !important; }
 
 # ─── Custom Theme ───────────────────────────────────────────────────────────
 fintech_theme = gr.themes.Soft(
-    primary_hue="emerald",
-    secondary_hue="zinc",
-    neutral_hue="zinc",
+    primary_hue="blue",
+    secondary_hue="indigo",
+    neutral_hue="slate",
     font=[gr.themes.GoogleFont("Inter")]
 ).set(
-    body_background_fill="#09090b",
-    body_background_fill_dark="#09090b",
-    block_background_fill="#121215",
-    block_background_fill_dark="#121215",
-    block_border_color="#27272a",
-    block_border_color_dark="#27272a",
-    input_background_fill="#18181b",
-    input_background_fill_dark="#18181b",
-    input_border_color="#27272a",
-    input_border_color_dark="#27272a",
-    button_primary_background_fill="#10b981",
-    button_primary_background_fill_hover="#059669",
+    body_background_fill="#0a0f1d",
+    body_background_fill_dark="#0a0f1d",
+    block_background_fill="#0f172a",
+    block_background_fill_dark="#0f172a",
+    block_border_color="#1e293b",
+    block_border_color_dark="#1e293b",
+    input_background_fill="#131d38",
+    input_background_fill_dark="#131d38",
+    input_border_color="#1e2d4d",
+    input_border_color_dark="#1e2d4d",
+    button_primary_background_fill="#2563eb",
+    button_primary_background_fill_hover="#3b82f6",
     button_primary_text_color="#ffffff",
-    button_secondary_background_fill="#18181b",
-    button_secondary_background_fill_hover="#27272a",
-    button_secondary_text_color="#e4e4e7",
-    button_secondary_border_color="#27272a",
-    button_secondary_border_color_dark="#27272a",
+    button_secondary_background_fill="#131d38",
+    button_secondary_background_fill_hover="#1e2d4d",
+    button_secondary_text_color="#e2e8f0",
+    button_secondary_border_color="#1e2d4d",
+    button_secondary_border_color_dark="#1e2d4d",
 )
 
 # ─── Gradio Application Definition ──────────────────────────────────────────
