@@ -506,6 +506,27 @@ def export_json_action(period_key: str):
     return gr.File(label="Download Exported File", visible=False)
 
 
+# ─── AI Financial Chatbot Handlers ──────────────────────────────────────────
+def chatbot_respond(user_message: str, history: Optional[list], period_key: Optional[str] = None):
+    """Generate conversational financial intelligence response for the AI Chatbot."""
+    if not user_message or not user_message.strip():
+        return "", history or []
+    history = list(history) if history else []
+    query = user_message.strip()
+    answer = query_financial_advisor(query, period_key)
+    history.append({"role": "user", "content": query})
+    history.append({"role": "assistant", "content": answer})
+    return "", history
+
+
+def clear_chatbot():
+    """Reset chatbot conversation history to initial greeting."""
+    return [{
+        "role": "assistant",
+        "content": "👋 **Hello! I am your personal ExpensifyAI Financial Advisor.**\n\nI analyze your audited receipts and line-item purchases in real time. Ask me anything about your finances, or click one of the suggested prompts below!"
+    }]
+
+
 # ─── Tab 3: Bank Statement Reconciliation ────────────────────────────────────
 def reconcile_statement_action(file_obj, month_key: Optional[str] = None):
     """Reconcile receipts against an uploaded bank or UPI statement CSV."""
@@ -899,13 +920,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
             with gr.Row():
                 # Left Column: Upload & Engine Choice
                 with gr.Column(scale=5):
-                    sample_picker = gr.Dropdown(
-                        label="⚡ Quick Demo: Pick Sample Receipt",
-                        choices=list(SAMPLE_RECEIPTS.keys()),
-                        value=None,
-                        info="Instant test without uploading your own photo"
-                    )
-                    image_input = gr.Image(label="Receipt Photograph", type="numpy", height=360)
+                    image_input = gr.Image(label="Receipt Photograph", type="numpy", height=380)
 
                     engine_select = gr.Radio(
                         label="OCR Engine",
@@ -945,7 +960,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                     with gr.Row():
                         recon_badge = gr.HTML("<div class='recon-pill-neutral'><span class='dot'></span> Ready to Scan</div>")
 
-                    status_banner = gr.HTML("<div class='notice-box neutral'>Upload or select a sample receipt and click <b>Scan & Extract</b>.</div>")
+                    status_banner = gr.HTML("<div class='notice-box neutral'>Upload a receipt photograph and click <b>Scan & Extract</b>.</div>")
 
             gr.Markdown("### 📝 Itemized Expenses (Human-in-the-Loop Editor)")
             items_editor = gr.DataFrame(
@@ -1035,12 +1050,6 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 raw_ocr_output = gr.Textbox(label="Raw Character Recognition Output", lines=7, interactive=False)
 
             # Event Handlers for Tab 1
-            sample_picker.change(
-                fn=load_sample_receipt,
-                inputs=[sample_picker],
-                outputs=[image_input]
-            )
-
             scan_btn.click(
                 fn=scan_receipt_action,
                 inputs=[image_input, engine_select, categorizer_select],
@@ -1071,12 +1080,12 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[retrain_model_feedback]
             )
 
-        # ── TAB 2: SPENDING ANALYTICS & INSIGHTS ────────────────────────────
+        # ── TAB 2: SPENDING ANALYTICS ───────────────────────────────────────
         init_months = get_available_months()
         init_month = init_months[0] if init_months else None
         init_total, init_trips, init_avg, init_top, init_chart, init_insights = load_analytics_dashboard("Monthly", init_month)
 
-        with gr.Tab("📊 Spending Analytics & AI Insights") as tab_spending_analytics:
+        with gr.Tab("📊 Spending Analytics") as tab_spending_analytics:
             with gr.Row():
                 timeframe_radio = gr.Radio(
                     label="📅 Time Horizon",
@@ -1111,39 +1120,6 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                     insights_display = gr.Markdown(init_insights)
 
             file_download = gr.File(label="📥 Download Exported Dataset", visible=False)
-
-            # Interactive AI Financial Advisor
-            with gr.Accordion("🤖 Interactive AI Financial Advisor (Q&A)", open=True):
-                with gr.Row():
-                    advisor_query_in = gr.Textbox(
-                        label="Ask anything about your spending, budget pacing, or categories",
-                        placeholder="e.g. 'What was my biggest expense?', 'Break down my food spend', 'How can I save money?'",
-                        scale=4
-                    )
-                    ask_advisor_btn = gr.Button("💬 Ask Advisor", variant="primary", scale=1)
-
-                gr.Examples(
-                    examples=[
-                        ["What was my single most expensive purchase?"],
-                        ["Break down my spending by category"],
-                        ["Give me 3 specific recommendations to cut expenses"],
-                        ["What is my projected velocity at this rate?"]
-                    ],
-                    inputs=[advisor_query_in]
-                )
-
-                advisor_answer_box = gr.Markdown("💬 *Click any quick question above or enter your own to receive instant AI spending analysis.*")
-
-                ask_advisor_btn.click(
-                    fn=query_financial_advisor,
-                    inputs=[advisor_query_in, period_select],
-                    outputs=[advisor_answer_box]
-                )
-                advisor_query_in.submit(
-                    fn=query_financial_advisor,
-                    inputs=[advisor_query_in, period_select],
-                    outputs=[advisor_answer_box]
-                )
 
             # Tab event handlers
             timeframe_radio.change(
@@ -1190,7 +1166,86 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[file_download]
             )
 
-        # ── TAB 3: BANK & UPI STATEMENT RECONCILIATION ──────────────────────
+        # ── TAB 3: AI FINANCIAL CHATBOT ─────────────────────────────────────
+        with gr.Tab("💬 AI Financial Chatbot") as tab_ai_chatbot:
+            gr.HTML("""
+            <div style="margin-bottom: 16px;">
+                <div style="font-size: 20px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
+                    <span>💬</span> ExpensifyAI Financial Chatbot & Spending Advisor
+                </div>
+                <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">
+                    Converse directly with your local AI financial advisor. Ask real-time questions about your spending patterns, category breakdowns, merchant concentrations, budget pacing, and personalized savings strategies.
+                </div>
+            </div>
+            """)
+
+            with gr.Row():
+                chatbot_period_select = gr.Dropdown(
+                    label="Statement Period Context",
+                    choices=init_months or ["No data yet"],
+                    value=init_month,
+                    scale=4,
+                    info="The AI advisor will analyze transaction data from this specific billing period"
+                )
+                chatbot_sync_btn = gr.Button("🔄 Sync Period", scale=1)
+
+            chatbot_display = gr.Chatbot(
+                value=[{
+                    "role": "assistant",
+                    "content": "👋 **Hello! I am your personal ExpensifyAI Financial Advisor.**\n\nI analyze your audited receipts and line-item purchases in real time. Ask me anything about your finances, or click one of the suggested prompts below!"
+                }],
+                label="ExpensifyAI Conversation",
+                height=480,
+                buttons=["copy"]
+            )
+
+            with gr.Row():
+                chatbot_query_in = gr.Textbox(
+                    label="Your Financial Question",
+                    placeholder="Ask anything, e.g. 'What was my single most expensive purchase?', 'Break down my food spend', 'How can I save money?'",
+                    scale=5,
+                    lines=1
+                )
+                chatbot_send_btn = gr.Button("💬 Send", variant="primary", scale=1)
+                chatbot_clear_btn = gr.Button("🗑️ Clear", variant="secondary", scale=1)
+
+            gr.Examples(
+                examples=[
+                    ["What was my single most expensive purchase?"],
+                    ["Break down my spending by category"],
+                    ["Give me 3 specific recommendations to cut expenses"],
+                    ["What is my projected velocity at this rate?"],
+                    ["Which merchant captured most of my budget?"],
+                    ["How much did I spend on Food vs Dining?"]
+                ],
+                inputs=[chatbot_query_in]
+            )
+
+            # Chatbot Event Handlers
+            chatbot_send_btn.click(
+                fn=chatbot_respond,
+                inputs=[chatbot_query_in, chatbot_display, chatbot_period_select],
+                outputs=[chatbot_query_in, chatbot_display]
+            )
+            chatbot_query_in.submit(
+                fn=chatbot_respond,
+                inputs=[chatbot_query_in, chatbot_display, chatbot_period_select],
+                outputs=[chatbot_query_in, chatbot_display]
+            )
+            chatbot_clear_btn.click(
+                fn=clear_chatbot,
+                outputs=[chatbot_display]
+            )
+            chatbot_sync_btn.click(
+                fn=refresh_month_choices,
+                outputs=[chatbot_period_select]
+            )
+            tab_ai_chatbot.select(
+                fn=refresh_month_choices,
+                outputs=[chatbot_period_select]
+            )
+
+        # ── TAB 4: BANK & UPI STATEMENT RECONCILIATION ──────────────────────
         with gr.Tab("💳 Bank & Statement Reconciliation"):
             gr.Markdown("""
             ### 💳 Cross-Reconcile Receipts with Bank / UPI Statements
@@ -1217,7 +1272,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[statement_recon_table, statement_recon_summary]
             )
 
-        # ── TAB 4: RECEIPT REPOSITORY & CRUD ────────────────────────────────
+        # ── TAB 5: RECEIPT REPOSITORY & CRUD ────────────────────────────────
         with gr.Tab("🗄️ Receipt History & Archive"):
             gr.Markdown("### 🗄️ Search, Inspect & Manage Archived Receipts")
 
@@ -1261,7 +1316,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
                 outputs=[delete_feedback, repo_table]
             )
 
-        # ── TAB 5: SYSTEM ARCHITECTURE & BENCHMARKS ─────────────────────────
+        # ── TAB 6: SYSTEM ARCHITECTURE & BENCHMARKS ─────────────────────────
         with gr.Tab("📐 System Architecture & Specs"):
             gr.Markdown(r"""
             ### 🏗️ Production Architecture & Pipeline Design
@@ -1272,7 +1327,7 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
             | **Spatial OCR Engine (Default)** | Tesseract 5.x (`image_to_data`) | Layout-aware line clustering (**~213 ms** full receipt on CPU) |
             | **Vision Transformer (DL Fallback)**| Microsoft TrOCR (`base-printed`) | Autoregressive character generation (**~1.4 s** per cropped line) |
             | **Financial Reconciliation Guard** | Deterministic State-Machine | Mathematically checks line item sum against printed total |
-            | **Multi-Tier NLP Categorizer** | DistilBERT + Calibrated Adapter | 7 categories, post-hoc Temperature Scaling ($T^*=1.59$), ECE **11.8%** |
+            | **Multi-Tier NLP Categorizer** | DistilBERT + Calibrated Adapter | 15 categories, post-hoc Temperature Scaling ($T^*=1.11$), ECE **7.5%** |
             | **Active Learning Memory** | SQLite Relational Database | $O(1)$ exact & fuzzy user correction recall + fast on-device retraining |
             | **REST Microservice Layer** | FastAPI + Pydantic v2 | OpenAPI / Swagger interactive documentation available at `/docs` |
 
@@ -1295,6 +1350,9 @@ with gr.Blocks(title="ExpensifyML • Expense Intelligence") as demo:
         fn=refresh_period_choices,
         inputs=[timeframe_radio],
         outputs=[period_select]
+    ).then(
+        fn=refresh_month_choices,
+        outputs=[chatbot_period_select]
     ).then(
         fn=load_analytics_dashboard,
         inputs=[timeframe_radio, period_select],
