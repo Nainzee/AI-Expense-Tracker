@@ -1,12 +1,39 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
+
+# Virtual environments
 venv/
 .venv/
+env/
+ENV/
+
+# Environment variables
 .env
+.env.local
+
+# OS generated files
 .DS_Store
+Thumbs.db
+
+# Model weights & large artifacts
 *.pt
 *.pth
 *.safetensors
-receipts_db/receipts.json.gradio/
+*.bin
+models/category_model/
+
+# Gradio cache
 .gradio/
-receipts_db/receipts.json
+
+# Runtime charts & temp db
+receipts_db/*.png
+receipts_db/*.csv
+receipts_db/*.json
+receipts_db/*.db
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
