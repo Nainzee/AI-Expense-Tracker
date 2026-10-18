@@ -353,6 +353,47 @@ def export_json_action(month_key: str):
     return export_to_json(month_key)
 
 
+def reconcile_statement_action(file_obj, month_key: Optional[str] = None):
+    """Reconcile receipts against an uploaded bank or UPI statement CSV."""
+    if file_obj is None:
+        return pd.DataFrame(), "⚠️ Please upload a valid CSV bank statement file."
+    try:
+        from statement_matcher import parse_bank_statement_csv, match_receipts_to_statement
+        file_path = file_obj.name if hasattr(file_obj, "name") else str(file_obj)
+        txns = parse_bank_statement_csv(file_path)
+        receipts = list_receipts(month_key=month_key) if month_key and month_key != "No data yet" else list_receipts()
+        if not receipts:
+            return pd.DataFrame(), "⚠️ No receipts found in storage to reconcile."
+
+        matches = match_receipts_to_statement(receipts, txns)
+        rows = []
+        verified_count = 0
+        for m in matches:
+            if m.match_status == "Verified Match":
+                verified_count += 1
+            rows.append({
+                "Receipt ID": m.receipt_id,
+                "Merchant": m.receipt_store,
+                "Receipt Amt": f"{m.receipt_amount:.2f}",
+                "Matched Txn": m.txn_description,
+                "Bank Amt": f"{m.txn_amount:.2f}" if m.txn_amount > 0 else "—",
+                "Status": f"✅ {m.match_status}" if m.match_status == "Verified Match" else (f"🟡 {m.match_status}" if m.match_status == "Probable Match" else f"❌ {m.match_status}"),
+                "Score": f"{m.confidence_score * 100:.0f}%",
+                "Audit Note": m.explanation
+            })
+        df = pd.DataFrame(rows)
+        summary = (
+            f"### 📑 Bank Statement Reconciliation Summary\n"
+            f"- Scanned Receipts Audited: **{len(receipts)}**\n"
+            f"- Bank Transactions Loaded: **{len(txns)}**\n"
+            f"- Verified Matches: **{verified_count} / {len(receipts)}** ({(verified_count/max(len(receipts),1))*100:.0f}% reconciliation rate)\n"
+        )
+        return df, summary
+    except Exception as exc:
+        return pd.DataFrame(), f"⚠️ Reconciliation error: {str(exc)}"
+
+
+
 # ─── Tab 3: Receipt Manager & CRUD ──────────────────────────────────────────
 def search_and_list_receipts(search_term: str):
     records = list_receipts(search_query=search_term)
@@ -629,6 +670,29 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
                     inputs=[advisor_query_in, month_select],
                     outputs=[advisor_answer_box]
                 )
+
+            # ── Bank & UPI Statement Reconciliation (Optional Differentiator) ────────
+            with gr.Accordion("💳 Bank & UPI Statement Reconciliation (Cross-Verification)", open=False):
+                gr.Markdown(
+                    "Upload your Bank or UPI statement export (.csv) to automatically cross-verify physical receipts "
+                    "against digital bank transactions using multi-factor amount, date window (±3d), and fuzzy merchant matching."
+                )
+                with gr.Row():
+                    statement_file_in = gr.File(label="Upload Bank / UPI Statement (.csv)", file_types=[".csv"], scale=3)
+                    reconcile_btn = gr.Button("🔍 Reconcile Transactions", variant="primary", scale=1)
+                statement_recon_table = gr.DataFrame(
+                    headers=["Receipt ID", "Merchant", "Receipt Amt", "Matched Txn", "Bank Amt", "Status", "Score", "Audit Note"],
+                    interactive=False,
+                    wrap=True
+                )
+                statement_recon_summary = gr.Markdown("")
+
+                reconcile_btn.click(
+                    fn=reconcile_statement_action,
+                    inputs=[statement_file_in, month_select],
+                    outputs=[statement_recon_table, statement_recon_summary]
+                )
+
 
             # Tab & Control Events
             tab_spending_analytics.select(

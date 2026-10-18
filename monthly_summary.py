@@ -147,6 +147,91 @@ def generate_monthly_chart(month_key: Optional[str] = None) -> Optional[str]:
     return chart_path
 
 
+DEFAULT_CATEGORY_BUDGETS: Dict[str, float] = {
+    "Food": 15000.0,
+    "Drinks": 3000.0,
+    "Household": 4000.0,
+    "Personal Care": 3500.0,
+    "Medical": 3000.0,
+    "Bakery": 2000.0,
+    "Dining": 5000.0,
+    "Electronics": 10000.0,
+    "Apparel": 5000.0,
+    "Other": 2500.0,
+}
+
+
+def calculate_budget_alerts(
+    category_totals: Dict[str, float],
+    budgets: Optional[Dict[str, float]] = None,
+    currency: str = "₹"
+) -> List[dict]:
+    """Calculate budget limits and alert flags per category."""
+    b = budgets or DEFAULT_CATEGORY_BUDGETS
+    alerts = []
+    for cat, spend in category_totals.items():
+        limit = b.get(cat, 5000.0)
+        pct = (spend / limit) * 100.0
+        if pct >= 100.0:
+            status = "🔴 Exceeded"
+            msg = f"{cat} exceeded monthly budget by {currency}{spend - limit:,.2f} ({pct:.0f}% utilized)"
+        elif pct >= 75.0:
+            status = "🟡 Warning"
+            msg = f"{cat} approaching budget limit: {pct:.0f}% utilized ({currency}{limit - spend:,.2f} remaining)"
+        else:
+            status = "🟢 On Track"
+            msg = f"{cat} within budget: {pct:.0f}% utilized ({currency}{limit - spend:,.2f} remaining)"
+        alerts.append({
+            "category": cat,
+            "spend": round(spend, 2),
+            "budget": round(limit, 2),
+            "percentage": round(pct, 1),
+            "status": status,
+            "message": msg
+        })
+    return sorted(alerts, key=lambda x: x["percentage"], reverse=True)
+
+
+def calculate_month_end_forecast(data: dict) -> dict:
+    """Compute empirical run-rate forecast to the end of the calendar month."""
+    grand = float(data.get("grand_total", 0.0))
+    receipts = data.get("receipts", [])
+    curr = data.get("currency", "₹")
+
+    days_in_month = 30
+    month_str = data.get("month", "")
+    if month_str and "-" in month_str:
+        try:
+            parts = month_str.split("-")
+            import calendar
+            days_in_month = calendar.monthrange(int(parts[0]), int(parts[1]))[1]
+        except Exception:
+            days_in_month = 30
+
+    latest_day = 15
+    for r in receipts:
+        d = r.get("date", "")
+        if d and len(d) >= 10:
+            try:
+                day_num = int(d.split("-")[2][:2])
+                if day_num > latest_day:
+                    latest_day = day_num
+            except Exception:
+                pass
+
+    day_progress = max(1, min(latest_day, days_in_month))
+    daily_velocity = grand / day_progress
+    projected_total = daily_velocity * days_in_month
+
+    return {
+        "days_in_month": days_in_month,
+        "day_progress": day_progress,
+        "daily_velocity": round(daily_velocity, 2),
+        "projected_total": round(projected_total, 2),
+        "currency": curr
+    }
+
+
 # ─── Smart AI Financial Advisor Insights ─────────────────────────────────────
 def generate_insights(data: Optional[dict]) -> List[str]:
     """Generate comprehensive, multi-dimensional financial observations and actionable advice."""
@@ -162,6 +247,23 @@ def generate_insights(data: Optional[dict]) -> List[str]:
     r_count = len(receipts)
 
     insights: List[str] = []
+
+    # 0. Active Category Budget Alerts
+    budget_alerts = calculate_budget_alerts(cat_totals, currency=curr)
+    exceeded = [a for a in budget_alerts if a["status"] == "🔴 Exceeded"]
+    warning = [a for a in budget_alerts if a["status"] == "🟡 Warning"]
+    if exceeded:
+        insights.append(f"Budget Alert: {exceeded[0]['message']}.")
+    elif warning:
+        insights.append(f"Budget Watch: {warning[0]['message']}.")
+
+    # 0.5. Month-End Velocity Forecast
+    forecast = calculate_month_end_forecast(data)
+    insights.append(
+        f"Month-End Velocity Forecast: Paced at {curr}{forecast['daily_velocity']:,.2f}/day through Day {forecast['day_progress']}. "
+        f"Projected month-end outlay is ~{curr}{forecast['projected_total']:,.2f} ({forecast['days_in_month']}-day projection)."
+    )
+
 
     # 1. Executive Health Score & Discipline Index
     essential_cats = {"Food", "Medical", "Household", "Personal Care"}
@@ -255,17 +357,6 @@ def generate_insights(data: Optional[dict]) -> List[str]:
     else:
         insights.append("Baseline Tracking Period: Currently establishing initial expenditure benchmarks for MoM tracking.")
 
-    # 9. Predictive Run-Rate Projections
-    try:
-        latest_date_str = max(r.get("date", "2026-10-18") for r in receipts)
-        day_of_month = int(latest_date_str.split("-")[2][:2])
-    except Exception:
-        day_of_month = 18
-
-    projected_spend = (grand / max(day_of_month, 1)) * 30
-    insights.append(
-        f"Run-Rate Forecast: At the current pacing through Day {day_of_month}, estimated month-end outlay is projected at ~{curr}{projected_spend:,.2f}."
-    )
 
     # 10. Actionable Budget Savings Advice
     if cat_totals.get("Food", 0) > (grand * 0.40):
