@@ -859,11 +859,21 @@ with gr.Blocks(title="Smart Receipt Scanner & Expense Intelligence") as demo:
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
     share = os.environ.get("GRADIO_SHARE", "0") == "1"
+
+    # Optional password authentication for public deployments
+    auth_credentials = None
+    if os.environ.get("REQUIRE_AUTH", "0") == "1" or os.environ.get("DEMO_PASSWORD"):
+        demo_user = os.environ.get("DEMO_USER", "admin")
+        demo_pass = os.environ.get("DEMO_PASSWORD", "demo123")
+        auth_credentials = (demo_user, demo_pass)
+        print(f"🔒 Demo authentication enabled (User: {demo_user})")
+
     print(f"🚀 Launching Smart Receipt Scanner on http://localhost:{port}")
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,
         share=share,
+        auth=auth_credentials,
         theme=gr.themes.Soft(primary_hue="emerald", secondary_hue="indigo"),
         css=CUSTOM_CSS,
         show_error=True,

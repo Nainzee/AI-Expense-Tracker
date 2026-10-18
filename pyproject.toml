@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "receipt-scanner-ai"
+version = "2.0.0"
+description = "Production-Grade AI Receipt Scanner, Spatial Line Parser, and Expense Intelligence Engine"
+readme = "README.md"
+authors = [
+    { name = "Naina", email = "naina@example.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["receipt-scanner", "ocr", "computer-vision", "nlp", "tesseract", "trocr", "fastapi", "gradio"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "opencv-python>=4.8.0",
+    "pytesseract>=0.3.10",
+    "pillow>=10.0.0",
+    "torch>=2.0.0",
+    "transformers>=4.35.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "pydantic>=2.0.0",
+    "gradio>=6.0.0",
+    "pandas>=2.0.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/example/receipt-scanner"
+Repository = "https://github.com/example/receipt-scanner"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"

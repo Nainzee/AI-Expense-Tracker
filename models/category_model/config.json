@@ -16,7 +16,8 @@
     "2": "Food",
     "3": "Household",
     "4": "Medical",
-    "5": "Personal Care"
+    "5": "Other",
+    "6": "Personal Care"
   },
   "initializer_range": 0.02,
   "label2id": {
@@ -25,7 +26,8 @@
     "Food": 2,
     "Household": 3,
     "Medical": 4,
-    "Personal Care": 5
+    "Other": 5,
+    "Personal Care": 6
   },
   "max_position_embeddings": 512,
   "model_type": "distilbert",
@@ -38,6 +40,6 @@
   "sinusoidal_pos_embds": false,
   "tie_weights_": true,
   "tie_word_embeddings": true,
-  "transformers_version": "5.15.0",
+  "transformers_version": "5.20.0",
   "vocab_size": 30522
 }

@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  # Gradio Web Application
+  web-ui:
+    build: .
+    container_name: receipt-scanner-ui
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./receipts_db:/app/receipts_db
+    environment:
+      - PORT=7860
+      - GRADIO_SHARE=0
+    restart: unless-stopped
+
+  # FastAPI Microservice Backend
+  api:
+    build: .
+    container_name: receipt-scanner-api
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./receipts_db:/app/receipts_db
+    environment:
+      - PORT=8000
+    restart: unless-stopped

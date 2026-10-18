@@ -5,7 +5,8 @@
     "2": "Food",
     "3": "Household",
     "4": "Medical",
-    "5": "Personal Care"
+    "5": "Other",
+    "6": "Personal Care"
   },
   "label2id": {
     "Bakery": 0,
@@ -13,6 +14,7 @@
     "Food": 2,
     "Household": 3,
     "Medical": 4,
-    "Personal Care": 5
+    "Other": 5,
+    "Personal Care": 6
   }
 }
