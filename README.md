@@ -151,6 +151,37 @@ See [`eval/failure_cases.md`](file:///Users/naina/Desktop/receipt_scanner/eval/f
 
 ---
 
+## v3 Quick Start (FastAPI + React + free local AI)
+
+v3 adds a React web app, login, PDF support, budgets, analytics and AI insights/chat. AI runs locally and for free
+through [Ollama](https://ollama.com); without it the app falls back to Tesseract OCR and rule-based insights.
+
+```bash
+# 1. Local AI (optional but recommended)
+brew install ollama && brew services start ollama
+ollama pull qwen2.5vl:7b   # receipt extraction (vision)
+ollama pull qwen3:4b       # insights + chat (tool calling)
+
+# 2. Backend
+pip install -r requirements.txt
+export APP_USERNAME=admin APP_PASSWORD='choose-a-password' APP_SECRET_KEY="$(openssl rand -hex 32)"
+uvicorn api:app --port 8000          # API docs at http://localhost:8000/docs
+
+# 3a. Frontend (dev, hot reload on http://localhost:5173, proxies /api to :8000)
+cd frontend && npm install && npm run dev
+
+# 3b. Frontend (production): build once, then FastAPI serves it at http://localhost:8000/
+cd frontend && npm run build
+```
+
+Environment variables (see `.env.example`): `APP_USERNAME`, `APP_PASSWORD`, `APP_SECRET_KEY` (login; required unless
+`AUTH_DISABLED=1` for local dev), `OLLAMA_URL`, `OLLAMA_VLM`, `OLLAMA_TEXT_MODEL`, `OLLAMA_TIMEOUT_S`,
+`RECEIPTS_DB_PATH` (SQLite file, default `receipts_db/receipts.db`; uploaded files go to `receipts_db/files/`).
+
+Tests: `python -m pytest` (Ollama is mocked; no network needed).
+
+---
+
 ## 🚀 Quickstart & Setup Instructions
 
 ### 1. Local Environment Setup

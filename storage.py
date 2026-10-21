@@ -13,19 +13,46 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import uuid
 from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_FILE = os.path.join(BASE_DIR, "receipts_db", "receipts.db")
-LEGACY_JSON_FILE = os.path.join(BASE_DIR, "receipts_db", "receipts.json")
+DEFAULT_DB_FILE = os.path.join(BASE_DIR, "receipts_db", "receipts.db")
+
+# Legacy display symbols -> ISO 4217 codes (v3 stores ISO codes only)
+SYMBOL_TO_ISO = {"₹": "INR", "RS": "INR", "RS.": "INR", "INR": "INR", "$": "USD", "USD": "USD",
+                 "€": "EUR", "EUR": "EUR", "£": "GBP", "GBP": "GBP"}
+
+
+def to_iso_currency(value: Optional[str]) -> str:
+    """Normalize a currency symbol or code to an ISO 4217 code (default INR)."""
+    v = (value or "").strip().upper()
+    if not v:
+        return "INR"
+    if v in SYMBOL_TO_ISO:
+        return SYMBOL_TO_ISO[v]
+    return v if (len(v) == 3 and v.isalpha()) else "INR"
+
+
+def db_file() -> str:
+    """Database path; overridable via RECEIPTS_DB_PATH (read on each call so tests can swap it)."""
+    path = os.environ.get("RECEIPTS_DB_PATH", "").strip()
+    if not path or not path.endswith(".db"):
+        return DEFAULT_DB_FILE
+    return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
+
+
+def legacy_json_file() -> str:
+    return os.path.join(os.path.dirname(db_file()), "receipts.json")
 
 
 def get_connection() -> sqlite3.Connection:
     """Create a SQLite connection with foreign keys enabled."""
-    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
-    conn = sqlite3.connect(DB_FILE)
+    path = db_file()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    conn = sqlite3.connect(path)
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.row_factory = sqlite3.Row
     return conn
@@ -78,10 +105,15 @@ def init_db():
     # Check for legacy JSON migration
     _migrate_legacy_json_if_needed()
 
+    # v3 schema migrations (idempotent, tracked via PRAGMA user_version)
+    from backend.db import migrate
+    with get_connection() as conn:
+        migrate(conn)
+
 
 def _migrate_legacy_json_if_needed():
     """Migrate records from legacy receipts.json to SQLite if receipts table is empty."""
-    if not os.path.exists(LEGACY_JSON_FILE):
+    if not os.path.exists(legacy_json_file()):
         return
 
     with get_connection() as conn:
@@ -91,7 +123,7 @@ def _migrate_legacy_json_if_needed():
             return  # Already migrated
 
         try:
-            with open(LEGACY_JSON_FILE, "r", encoding="utf-8") as f:
+            with open(legacy_json_file(), "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
             return
@@ -156,9 +188,22 @@ def save_receipt(
     subtotal: float = 0.0,
     tax: float = 0.0,
     receipt_id: Optional[str] = None,
+    merchant_address: Optional[str] = None,
+    time: Optional[str] = None,
+    invoice_number: Optional[str] = None,
+    file_path: Optional[str] = None,
+    file_hash: Optional[str] = None,
+    engine_used: Optional[str] = None,
+    reconciliation_status: Optional[str] = None,
+    raw_text: Optional[str] = None,
 ) -> str:
-    """Save a receipt and its line items atomically to SQLite."""
+    """Save a receipt and its line items atomically to SQLite.
+
+    A new receipt gets a collision-free ID and a plain INSERT; passing an
+    existing ``receipt_id`` replaces that receipt (used for edits).
+    """
     init_db()
+    currency = to_iso_currency(currency)
 
     actual_date = scan_date.strip() if scan_date else datetime.now().strftime("%Y-%m-%d")
     try:
@@ -171,16 +216,18 @@ def save_receipt(
 
     with get_connection() as conn:
         cur = conn.cursor()
-        if not receipt_id:
-            cur.execute("SELECT COUNT(*) FROM receipts WHERE month = ?", (month_key,))
-            seq = cur.fetchone()[0] + 1
-            receipt_id = f"REC-{month_key.replace('-', '')}-{seq:03d}"
+        is_new = not receipt_id
+        if is_new:
+            receipt_id = f"REC-{month_key.replace('-', '')}-{uuid.uuid4().hex[:8]}"
 
+        verb = "INSERT" if is_new else "INSERT OR REPLACE"
         cur.execute(
-            """
-            INSERT OR REPLACE INTO receipts
-            (id, date, month, store, subtotal, tax, total, currency, payment_method, notes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            f"""
+            {verb} INTO receipts
+            (id, date, month, store, subtotal, tax, total, currency, payment_method, notes, created_at,
+             merchant_address, time, invoice_number, file_path, file_hash, engine_used,
+             reconciliation_status, raw_text)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 receipt_id,
@@ -194,6 +241,14 @@ def save_receipt(
                 payment_method,
                 notes,
                 datetime.now().isoformat(),
+                merchant_address,
+                time,
+                invoice_number,
+                file_path,
+                file_hash,
+                engine_used,
+                reconciliation_status,
+                raw_text,
             ),
         )
 
@@ -204,17 +259,18 @@ def save_receipt(
             cur.execute(
                 """
                 INSERT INTO line_items
-                (receipt_id, item_name, category, amount, quantity, unit_price, confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (receipt_id, item_name, category, amount, quantity, unit_price, confidence, discount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     receipt_id,
                     str(item.get("item_name", "Item")).strip(),
                     str(item.get("category", "Other")).strip(),
                     float(item.get("amount", 0.0)),
-                    float(item.get("quantity", 1.0)),
-                    float(item.get("unit_price", abs(float(item.get("amount", 0.0))))),
+                    float(item.get("quantity") or 1.0),
+                    float(item.get("unit_price") if item.get("unit_price") is not None else abs(float(item.get("amount", 0.0)))),
                     float(item.get("confidence", 1.0)),
+                    float(item.get("discount") or 0.0),
                 ),
             )
         conn.commit()
