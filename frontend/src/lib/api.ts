@@ -23,12 +23,14 @@ function messageFrom(detail: unknown, fallback: string): string {
   return fallback
 }
 
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+
 export async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  const res = await fetch(`/api/v1${path}`, { ...init, headers })
+  const res = await fetch(`${API_BASE}/api/v1${path}`, { ...init, headers })
   if (res.status === 401 && !path.startsWith('/auth/login')) {
     clearToken()
     if (window.location.pathname !== '/login') window.location.assign('/login')
