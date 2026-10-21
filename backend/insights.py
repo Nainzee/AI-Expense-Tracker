@@ -16,7 +16,6 @@ log = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 4
 _SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}
-_THINK_RE = re.compile(r"<think>.*?</think>", re.S)
 
 
 class InsightPayload(BaseModel):
@@ -68,8 +67,8 @@ def _ai_insights(snap: dict) -> dict:
         f"{snap['currency']}. No emojis.\n\nDATA:\n{json.dumps(snap, default=str)}"
     )
     content = llm.chat(config.ollama_text_model(), [{"role": "user", "content": prompt}],
-                       schema=InsightPayload.model_json_schema(), think=False)
-    payload = InsightPayload.model_validate(json.loads(_THINK_RE.sub("", content)))
+                       schema=InsightPayload.model_json_schema())
+    payload = InsightPayload.model_validate(json.loads(content))
     return {"summary": payload.summary.strip(), "tips": [t.strip() for t in payload.tips if t.strip()][:5]}
 
 
@@ -157,7 +156,7 @@ def _tools(currency: str) -> Dict[str, Callable[[dict], Any]]:
             _iso_date(a.get("from"), "from"), _iso_date(a.get("to"), "to"), currency),
         "get_merchant_breakdown": lambda a: analytics.merchant_breakdown(
             _iso_date(a.get("from"), "from"), _iso_date(a.get("to"), "to"), currency,
-            _int(a.get("limit"), "limit", 10, 1, 50)),
+            _int(a.get("limit"), "limit", 10, 1, 50), _category(a.get("category"))),
         "get_monthly_trend": lambda a: analytics.monthly_trend(
             currency=currency, months=_int(a.get("months"), "months", 6, 1, 24)),
         "search_items": lambda a: analytics.search_items(
@@ -177,8 +176,8 @@ TOOL_SPECS = [
     _fn("get_total_spend", "Total spend between two dates, optionally for one category.",
         {"from": _D, "to": _D, "category": {"type": "string"}}, ["from", "to"]),
     _fn("get_category_breakdown", "Spend per category between two dates.", {"from": _D, "to": _D}, ["from", "to"]),
-    _fn("get_merchant_breakdown", "Top merchants by spend between two dates.",
-        {"from": _D, "to": _D, "limit": {"type": "integer"}}, ["from", "to"]),
+    _fn("get_merchant_breakdown", "Top merchants by spend between two dates, optionally only for one category.",
+        {"from": _D, "to": _D, "limit": {"type": "integer"}, "category": {"type": "string"}}, ["from", "to"]),
     _fn("get_monthly_trend", "Total spend per month for the last N months.", {"months": {"type": "integer"}}, []),
     _fn("search_items", "Find purchased line items whose name contains the query.",
         {"query": {"type": "string"}, "from": _D, "to": _D}, ["query"]),
@@ -222,7 +221,7 @@ def chat(message: str, history: Optional[List[dict]] = None, currency: Optional[
             reply = llm.chat_tools(config.ollama_text_model(), messages, TOOL_SPECS)
             tool_calls = reply.get("tool_calls") or []
             if not tool_calls:
-                return {"answer": _THINK_RE.sub("", reply.get("content", "")).strip(), "tool_calls": calls_made,
+                return {"answer": reply.get("content", ""), "tool_calls": calls_made,
                         "source": "ai"}
             messages.append({"role": "assistant", "content": reply.get("content", ""), "tool_calls": tool_calls})
             for call in tool_calls:
@@ -236,8 +235,8 @@ def chat(message: str, history: Optional[List[dict]] = None, currency: Optional[
                 result = run_tool(name, args, currency)
                 calls_made.append({"name": name, "arguments": args})
                 messages.append({"role": "tool", "tool_name": name, "content": json.dumps(result, default=str)})
-        final = llm.chat(config.ollama_text_model(), messages, think=False)
-        return {"answer": _THINK_RE.sub("", final).strip(), "tool_calls": calls_made, "source": "ai"}
+        final = llm.chat(config.ollama_text_model(), messages)
+        return {"answer": final, "tool_calls": calls_made, "source": "ai"}
     except llm.LLMError as exc:
         log.warning("AI chat failed, using rules: %s", exc)
         from monthly_summary import query_financial_advisor

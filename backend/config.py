@@ -41,7 +41,7 @@ def ollama_vlm() -> str:
 
 
 def ollama_text_model() -> str:
-    return env("OLLAMA_TEXT_MODEL", "qwen3:4b")
+    return env("OLLAMA_TEXT_MODEL", "qwen3:4b-instruct")
 
 
 def ollama_timeout() -> float:

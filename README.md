@@ -160,7 +160,7 @@ through [Ollama](https://ollama.com); without it the app falls back to Tesseract
 # 1. Local AI (optional but recommended)
 brew install ollama && brew services start ollama
 ollama pull qwen2.5vl:7b   # receipt extraction (vision)
-ollama pull qwen3:4b       # insights + chat (tool calling)
+ollama pull qwen3:4b-instruct  # insights + chat (tool calling)
 
 # 2. Backend
 pip install -r requirements.txt

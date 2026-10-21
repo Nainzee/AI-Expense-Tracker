@@ -77,12 +77,19 @@ def category_breakdown(frm=None, to=None, currency="INR") -> List[dict]:
     return [{"category": r["category"], "amount": round(r["a"], 2), "count": r["n"]} for r in rows]
 
 
-def merchant_breakdown(frm=None, to=None, currency="INR", limit: int = 10) -> List[dict]:
+def merchant_breakdown(frm=None, to=None, currency="INR", limit: int = 10,
+                       category: Optional[str] = None) -> List[dict]:
     db.init()
     w, p = _where(frm, to, currency)
     with storage.get_connection() as conn:
-        rows = conn.execute(f"SELECT r.store, SUM(r.total) a, COUNT(*) n FROM receipts r{w} GROUP BY r.store "
-                            f"ORDER BY a DESC LIMIT ?", p + [int(limit)]).fetchall()
+        if category:
+            w += (" AND " if w else " WHERE ") + "li.category = ?"
+            rows = conn.execute(f"SELECT r.store, SUM(li.amount) a, COUNT(DISTINCT r.id) n FROM line_items li "
+                                f"JOIN receipts r ON r.id = li.receipt_id{w} GROUP BY r.store ORDER BY a DESC LIMIT ?",
+                                p + [category, int(limit)]).fetchall()
+        else:
+            rows = conn.execute(f"SELECT r.store, SUM(r.total) a, COUNT(*) n FROM receipts r{w} GROUP BY r.store "
+                                f"ORDER BY a DESC LIMIT ?", p + [int(limit)]).fetchall()
     return [{"merchant": r["store"], "amount": round(r["a"], 2), "count": r["n"]} for r in rows]
 
 

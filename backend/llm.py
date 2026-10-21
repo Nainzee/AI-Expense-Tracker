@@ -70,19 +70,26 @@ def _post_chat(payload: dict) -> dict:
         raise LLMError(f"LLM request failed: {exc}") from exc
 
 
-def chat(model: str, messages: List[dict], schema: Optional[dict] = None, think: Optional[bool] = None) -> str:
+def strip_thinking(text: str) -> str:
+    """Drop any reasoning a thinking model leaks into content (``<think>…</think>``, opening tag optional)."""
+    if "</think>" in text:
+        text = text.rsplit("</think>", 1)[1]
+    return text.strip()
+
+
+def chat(model: str, messages: List[dict], schema: Optional[dict] = None) -> str:
     """Single chat completion; with ``schema`` Ollama constrains output to that JSON schema."""
     payload: Dict[str, Any] = {"model": model, "messages": messages, "stream": False,
                                "options": {"temperature": 0}}
     if schema is not None:
         payload["format"] = schema
-    if think is not None:
-        payload["think"] = think
-    return _post_chat(payload).get("message", {}).get("content", "")
+    return strip_thinking(_post_chat(payload).get("message", {}).get("content", ""))
 
 
 def chat_tools(model: str, messages: List[dict], tools: List[dict]) -> dict:
     """Chat with tool definitions; returns the assistant message (may contain ``tool_calls``)."""
     payload = {"model": model, "messages": messages, "tools": tools, "stream": False,
-               "think": False, "options": {"temperature": 0}}
-    return _post_chat(payload).get("message", {})
+               "options": {"temperature": 0}}
+    message = _post_chat(payload).get("message", {})
+    message["content"] = strip_thinking(message.get("content", ""))
+    return message

@@ -44,6 +44,11 @@ def test_category_and_mom(data):
     assert mom["previous"] == 400 and mom["current"] == 600 and mom["change_pct"] == 50.0
 
 
+def test_merchant_breakdown_by_category(data):
+    rows = analytics.merchant_breakdown("2025-01-01", "2025-02-28", "INR", 5, "Personal Care")
+    assert rows == [{"merchant": "Shop A", "amount": 100, "count": 1}]
+
+
 def test_forecast_uses_real_day():
     f = analytics.forecast("INR", today=date(2025, 2, 14))
     assert f["day"] == 14 and f["days_in_month"] == 28
