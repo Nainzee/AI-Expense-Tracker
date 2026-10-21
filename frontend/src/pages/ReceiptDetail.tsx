@@ -1,12 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Landmark, Link2, Pencil, Trash2, Unlink, Users, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import FilePreview from '../components/FilePreview'
 import ReceiptEditor, { type Draft } from '../components/ReceiptEditor'
+import SplitEditor from '../components/SplitEditor'
 import { Badge, Button, Card, ErrorBox, Spinner } from '../components/ui'
-import { api, type Receipt } from '../lib/api'
+import { api, type Receipt, type SplitMethod, type TxnBrief } from '../lib/api'
 import { money } from '../lib/format'
+
+const METHOD_LABEL: Record<SplitMethod, string> = { equal: 'equally', exact: 'exact amounts', percent: 'percentages', shares: 'shares', items: 'by item' }
 
 function toDraft(r: Receipt): Draft {
   return {
@@ -25,6 +28,80 @@ function toDraft(r: Receipt): Draft {
   }
 }
 
+function BankMatchCard({ r }: { r: Receipt }) {
+  const qc = useQueryClient()
+  const [picking, setPicking] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const cands = useQuery({
+    queryKey: ['bank-cands', r.id],
+    queryFn: () => api<{ transaction: TxnBrief; score: number | null }[]>(`/receipts/${encodeURIComponent(r.id)}/bank-candidates`),
+    enabled: picking,
+  })
+  const act = async (path: string, init: RequestInit) => {
+    setError(null)
+    try {
+      await api(path, init)
+      await qc.invalidateQueries()
+      setPicking(false)
+    } catch (err) {
+      setError(err)
+    }
+  }
+  const link = (tid: number) => act(`/transactions/${tid}/link`, { method: 'POST', body: JSON.stringify({ receipt_id: r.id }) })
+  const bm = r.bank_match
+  const row = (t: TxnBrief) => `${t.merchant || t.description} · ${t.date} · ${money(t.amount, t.currency)}`
+  return (
+    <Card title="Bank match" action={bm?.linked && <Badge tone="green">Counted once</Badge>}>
+      <ErrorBox error={error} />
+      {bm?.linked ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p className="flex items-center gap-2">
+            <Landmark className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
+            <span>Paid via bank: {row(bm.linked)}. Only this receipt is counted.</span>
+          </p>
+          <Button variant="secondary" onClick={() => act(`/transactions/${bm.linked!.id}/link`, { method: 'DELETE' })}>
+            <Unlink className="h-4 w-4" aria-hidden="true" /> Unlink
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3 text-sm">
+          {bm?.suggestions.map((s) => (
+            <div key={s.transaction.id} className="flex flex-wrap items-center justify-between gap-3">
+              <span>Is this the same payment? {row(s.transaction)}</span>
+              <div className="flex gap-2">
+                <Button onClick={() => link(s.transaction.id)}>
+                  <Check className="h-4 w-4" aria-hidden="true" /> Same
+                </Button>
+                <Button variant="secondary" onClick={() => act(`/transactions/${s.transaction.id}/candidates/${encodeURIComponent(r.id)}/reject`, { method: 'POST' })}>
+                  <X className="h-4 w-4" aria-hidden="true" /> Not the same
+                </Button>
+              </div>
+            </div>
+          ))}
+          {!bm?.suggestions.length && <p className="text-slate-600 dark:text-slate-400">Not matched to a bank or UPI payment.</p>}
+          <Button variant="ghost" onClick={() => setPicking(!picking)} aria-expanded={picking}>
+            <Link2 className="h-4 w-4" aria-hidden="true" /> Link a bank payment
+          </Button>
+          {picking && cands.isLoading && <Spinner label="Finding payments" />}
+          {picking && cands.data?.length === 0 && <p className="text-slate-600 dark:text-slate-400">No unlinked payments within a week and 25% of this total.</p>}
+          {picking && (
+            <ul className="space-y-2">
+              {cands.data?.map((c) => (
+                <li key={c.transaction.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <span>{row(c.transaction)}</span>
+                  <Button variant="secondary" onClick={() => link(c.transaction.id)} aria-label={`Link ${row(c.transaction)}`}>
+                    Link
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function ReceiptDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
@@ -35,13 +112,17 @@ export default function ReceiptDetail() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editSplit, setEditSplit] = useState(false)
+  const [confirmUnsplit, setConfirmUnsplit] = useState(false)
+  const [splitRemoved, setSplitRemoved] = useState(false)
 
   const save = async () => {
     if (!draft) return
     setBusy(true)
     setError(null)
     try {
-      await api(path, { method: 'PUT', body: JSON.stringify(draft) })
+      const res = await api<{ split_removed?: boolean }>(path, { method: 'PUT', body: JSON.stringify(draft) })
+      setSplitRemoved(Boolean(res.split_removed))
       await qc.invalidateQueries()
       setDraft(null)
     } catch (err) {
@@ -59,6 +140,20 @@ export default function ReceiptDetail() {
       navigate('/receipts')
     } catch (err) {
       setError(err)
+      setBusy(false)
+    }
+  }
+
+  const unsplit = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api(`${path}/split`, { method: 'DELETE' })
+      await qc.invalidateQueries()
+      setConfirmUnsplit(false)
+    } catch (err) {
+      setError(err)
+    } finally {
       setBusy(false)
     }
   }
@@ -100,6 +195,61 @@ export default function ReceiptDetail() {
         </div>
       </div>
       <ErrorBox error={error} />
+      {splitRemoved && (
+        <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+          The split was removed because it no longer matched the edited receipt.
+        </div>
+      )}
+      <BankMatchCard r={r} />
+      <Card
+        title="Split"
+        action={r.split && !editSplit && <Badge tone="indigo">Split · {METHOD_LABEL[r.split.method]}</Badge>}
+      >
+        {editSplit ? (
+          <SplitEditor receipt={r} initial={r.split} onSaved={() => { setEditSplit(false); setSplitRemoved(false) }} onCancel={() => setEditSplit(false)} />
+        ) : r.split ? (
+          <div className="space-y-4">
+            <p className="text-sm font-semibold">
+              {r.split.payer.id === null ? (
+                <span className="text-emerald-700 dark:text-emerald-300">You paid · you lent {money(r.split.you_lent, r.split.currency)}</span>
+              ) : (
+                <span className="text-amber-800 dark:text-amber-300">{r.split.payer.name} paid · you owe {money(r.split.you_owe, r.split.currency)} to {r.split.payer.name}</span>
+              )}
+            </p>
+            <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
+              {r.split.shares.map((s) => (
+                <li key={s.person_id ?? 'you'} className="flex justify-between gap-3 py-2">
+                  <span>{s.name}</span>
+                  <span className="tabular-nums">{money(s.amount, r.split!.currency)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setEditSplit(true)}>
+                <Pencil className="h-4 w-4" aria-hidden="true" /> Edit split
+              </Button>
+              {!confirmUnsplit ? (
+                <Button variant="secondary" onClick={() => setConfirmUnsplit(true)}>
+                  <Trash2 className="h-4 w-4" aria-hidden="true" /> Remove split
+                </Button>
+              ) : (
+                <div role="alertdialog" aria-label="Confirm remove split" className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm">Remove this split? Balances will update.</span>
+                  <Button variant="danger" onClick={unsplit} loading={busy}>Remove</Button>
+                  <Button variant="ghost" onClick={() => setConfirmUnsplit(false)} autoFocus>Cancel</Button>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-slate-600 dark:text-slate-400">Shared this bill? Split it to track who owes what.</p>
+            <Button variant="secondary" onClick={() => setEditSplit(true)}>
+              <Users className="h-4 w-4" aria-hidden="true" /> Split this bill
+            </Button>
+          </div>
+        )}
+      </Card>
       <div className="grid gap-6 lg:grid-cols-2">
         <Card title="Original">
           <FilePreview receiptId={r.has_file ? r.id : undefined} />

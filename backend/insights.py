@@ -10,7 +10,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
-from backend import analytics, config, db, llm
+from backend import analytics, config, db, llm, splits
+from backend.statements import recurring
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ def _anomalies(snap: dict) -> List[str]:
                        f"({b['percentage']:.0f}%).")
     total = snap["total"] or 0
     for it in snap["top_items"]:
-        if total > 0 and it["amount"] >= 0.3 * total and snap["receipt_count"] > 1:
+        if total > 0 and it["amount"] >= 0.3 * total and snap.get("payment_count", snap["receipt_count"]) > 1:
             out.append(f"'{it['item_name']}' at {it['store']} ({_fmt(it['amount'], cur)}) is "
                        f"{it['amount'] / total * 100:.0f}% of this month's spend.")
     mom = snap["month_over_month"]
@@ -55,7 +56,10 @@ def _rule_insights(month: str, currency: str, snap: dict) -> dict:
     lines = generate_insights(data)
     cats = snap["per_category"]
     top = f" Top category: {cats[0]['category']} ({_fmt(cats[0]['amount'], currency)})." if cats else ""
-    summary = (f"You spent {_fmt(snap['total'], currency)} across {snap['receipt_count']} receipt(s) in {month}.{top}")
+    mix = snap.get("source_mix") or {}
+    bank = (mix.get("statements") or {}).get("count", 0)
+    across = f"{snap['receipt_count']} receipt(s)" + (f" and {bank} bank/UPI payment(s)" if bank else "")
+    summary = f"You spent {_fmt(snap['total'], currency)} across {across} in {month}.{top}"
     return {"summary": summary, "tips": lines[:6]}
 
 
@@ -74,11 +78,15 @@ def _ai_insights(snap: dict) -> dict:
 
 def get_insights(month: Optional[str] = None, currency: Optional[str] = None, refresh: bool = False) -> dict:
     month = month or date_cls.today().strftime("%Y-%m")
-    currency = currency or analytics.dominant_currency()
+    if not currency:
+        # Use the currency actually used in this month, not the all-time one; otherwise
+        # e.g. an INR-only month is reported as "no receipts" when older receipts are USD.
+        currency = analytics.dominant_currency(*analytics._month_bounds(month))
     snap = analytics.month_snapshot(month, currency)
     base = {"month": month, "currency": currency}
-    if snap["receipt_count"] == 0:
-        return {**base, "summary": f"No receipts recorded for {month} yet. Scan a receipt to get insights.",
+    if snap.get("payment_count", snap["receipt_count"]) == 0:
+        return {**base, "summary": f"No spending recorded for {month} yet. Scan a receipt or import a bank "
+                                   f"statement to get insights.",
                 "tips": [], "anomalies": [], "source": "rules"}
 
     fingerprint = analytics.receipt_fingerprint(month, currency)
@@ -163,6 +171,11 @@ def _tools(currency: str) -> Dict[str, Callable[[dict], Any]]:
             _query(a.get("query")),
             _iso_date(a.get("from"), "from", False), _iso_date(a.get("to"), "to", False), currency),
         "get_budget_status": lambda a: analytics.budget_status(_month(a.get("month")), currency),
+        "get_split_balances": lambda a: splits.balances(),
+        "get_payee_spend": lambda a: analytics.payee_spend(
+            _iso_date(a.get("from"), "from"), _iso_date(a.get("to"), "to"), currency,
+            str(a.get("query") or "").strip()[:100] or None, _int(a.get("limit"), "limit", 10, 1, 50)),
+        "get_recurring_payments": lambda a: recurring.recurring_payments(),
     }
 
 
@@ -183,6 +196,12 @@ TOOL_SPECS = [
         {"query": {"type": "string"}, "from": _D, "to": _D}, ["query"]),
     _fn("get_budget_status", "Budget limits vs spend per category for a month.",
         {"month": {"type": "string", "description": "YYYY-MM"}}, []),
+    _fn("get_split_balances", "Who owes the user money and whom the user owes, per person and currency, from split bills.", {}, []),
+    _fn("get_payee_spend", "Spend per merchant or payee (receipts and bank/UPI payments) between two dates, "
+        "optionally filtered by a name query.",
+        {"from": _D, "to": _D, "query": {"type": "string"}, "limit": {"type": "integer"}}, ["from", "to"]),
+    _fn("get_recurring_payments", "Recurring payments (subscriptions, bills) detected from bank/UPI statements.",
+        {}, []),
 ]
 
 

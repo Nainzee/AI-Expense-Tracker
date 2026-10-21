@@ -30,3 +30,10 @@ pytest>=7.4.0
 # v3: PDF rendering & auth
 pypdfium2==5.14.0
 PyJWT==2.15.1
+# Bank / UPI statement import
+pdfplumber==0.11.10
+pdfminer.six==20260107
+cryptography==50.0.2
+openpyxl==3.1.5
+xlrd==2.0.2
+fpdf2==2.8.9

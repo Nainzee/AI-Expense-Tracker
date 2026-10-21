@@ -1,11 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Camera, CheckCircle2, FileUp, RotateCcw } from 'lucide-react'
+import { Camera, CheckCircle2, FileUp, RotateCcw, Users } from 'lucide-react'
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import FilePreview from '../components/FilePreview'
 import ReceiptEditor, { type Draft } from '../components/ReceiptEditor'
+import SplitEditor from '../components/SplitEditor'
 import { Badge, Button, Card, ErrorBox, Spinner } from '../components/ui'
-import { api, ApiError, type ScanResult } from '../lib/api'
+import { api, ApiError, type BankMatch, type Receipt, type ScanResult } from '../lib/api'
 import { money } from '../lib/format'
 
 const ACCEPT = 'image/png,image/jpeg,image/webp,application/pdf'
@@ -35,6 +36,10 @@ export default function UploadPage() {
   const [error, setError] = useState<unknown>(null)
   const [dup, setDup] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [saved, setSaved] = useState<Receipt | null>(null)
+  const [splitting, setSplitting] = useState(false)
+  const [wantSplit, setWantSplit] = useState(false)
+  const [bank, setBank] = useState<BankMatch | null>(null)
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
 
@@ -45,6 +50,10 @@ export default function UploadPage() {
     setDraft(null)
     setError(null)
     setDup(null)
+    setSaved(null)
+    setSplitting(false)
+    setWantSplit(false)
+    setBank(null)
   }
 
   const runScan = async (f: File) => {
@@ -82,9 +91,15 @@ export default function UploadPage() {
     setBusy('save')
     setError(null)
     try {
-      const res = await api<{ id: string }>('/receipts', { method: 'POST', body: JSON.stringify({ ...draft, force }) })
+      const res = await api<{ id: string; linked_transaction: BankMatch['linked']; match_suggestions: BankMatch['suggestions'] }>('/receipts', {
+        method: 'POST',
+        body: JSON.stringify({ ...draft, force }),
+      })
+      setBank({ linked: res.linked_transaction ?? null, suggestions: res.match_suggestions ?? [] })
       await qc.invalidateQueries()
-      navigate(`/receipts/${encodeURIComponent(res.id)}`)
+      setSaved(await api<Receipt>(`/receipts/${encodeURIComponent(res.id)}`))
+      // If the user already chose "split" on the review screen, go straight to the split form.
+      if (wantSplit) setSplitting(true)
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         const d = err.detail as { duplicate_of?: string }
@@ -96,12 +111,13 @@ export default function UploadPage() {
   }
 
   const recon = scan?.reconciliation
+  const openReceipt = () => saved && navigate(`/receipts/${encodeURIComponent(saved.id)}`)
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Scan a receipt</h1>
-        {file && (
+        {file && !saved && (
           <Button variant="secondary" onClick={reset}>
             <RotateCcw className="h-4 w-4" aria-hidden="true" /> Start over
           </Button>
@@ -140,7 +156,40 @@ export default function UploadPage() {
 
       <ErrorBox error={error} />
 
-      {file && (
+      {saved && bank && (bank.linked || bank.suggestions.length > 0) && (
+        <div role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+          {bank.linked ? (
+            <>Linked to your bank payment on {bank.linked.date}, it won't be counted twice.</>
+          ) : (
+            <>
+              Possible bank match found.{' '}
+              <Link to="/statements/review" className="font-medium underline">Review it</Link>
+            </>
+          )}
+        </div>
+      )}
+
+      {saved && (
+        <Card title={splitting ? 'Split the bill' : 'Split this bill?'}>
+          {splitting ? (
+            <SplitEditor receipt={saved} onSaved={openReceipt} onCancel={openReceipt} />
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-700 dark:text-slate-300">
+                Saved {saved.store} ({money(saved.total, saved.currency)}). Did you share this bill with anyone?
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={() => setSplitting(true)}>
+                  <Users className="h-4 w-4" aria-hidden="true" /> Split bill
+                </Button>
+                <Button variant="secondary" onClick={openReceipt}>No, just me</Button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {file && !saved && (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card title="Original">
             <FilePreview url={preview} isPdf={file.type === 'application/pdf'} />
@@ -177,17 +226,59 @@ export default function UploadPage() {
             )}
             {draft && (
               <>
+                <SplitChoice value={wantSplit} onChange={setWantSplit} />
                 <ReceiptEditor draft={draft} onChange={setDraft} lowFields={scan?.low_confidence_fields} />
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Button onClick={() => save(Boolean(dup))} loading={busy === 'save'} disabled={!draft.merchant_name || draft.items.length === 0}>
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> {dup ? 'Save anyway' : 'Save receipt'}
-                  </Button>
+                <div className="mt-6">
+                  <div className="flex flex-wrap gap-3">
+                    <Button onClick={() => save(Boolean(dup))} loading={busy === 'save'} disabled={!draft.merchant_name || draft.items.length === 0}>
+                      {wantSplit ? <Users className="h-4 w-4" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+                      {dup ? (wantSplit ? 'Save anyway & split' : 'Save anyway') : wantSplit ? 'Save & split bill' : 'Save receipt'}
+                    </Button>
+                  </div>
                 </div>
               </>
             )}
           </Card>
         </div>
       )}
+    </div>
+  )
+}
+
+/** "Split this bill?" toggle shown at the top of the review screen. */
+function SplitChoice({ value, onChange, compact = false }: { value: boolean; onChange: (v: boolean) => void; compact?: boolean }) {
+  const opt = (v: boolean, label: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={value === v}
+      onClick={() => onChange(v)}
+      className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+        value === v
+          ? 'border-indigo-600 bg-indigo-600 text-white'
+          : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800'
+      }`}
+    >
+      {v && <Users className="h-4 w-4" aria-hidden="true" />}
+      {label}
+    </button>
+  )
+  return (
+    <div
+      className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-900 dark:bg-indigo-950/40 ${compact ? '' : 'mb-4'}`}
+    >
+      <div>
+        <p id={compact ? 'split-q-bottom' : 'split-q-top'} className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          Split this bill?
+        </p>
+        {!compact && (
+          <p className="text-xs text-slate-600 dark:text-slate-400">Choose who paid, how many people, and how to divide it after saving.</p>
+        )}
+      </div>
+      <div role="radiogroup" aria-labelledby={compact ? 'split-q-bottom' : 'split-q-top'} className="flex gap-2">
+        {opt(true, 'Yes, split')}
+        {opt(false, 'No, just me')}
+      </div>
     </div>
   )
 }

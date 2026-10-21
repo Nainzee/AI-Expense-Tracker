@@ -39,7 +39,9 @@ receipts_db/*.db
 .pytest_cache/
 .coverage
 htmlcov/
+.agents/
 # v3 uploaded receipt files & frontend build
 receipts_db/files/
+receipts_db/legacy_backup/
 frontend/node_modules/
 frontend/dist/

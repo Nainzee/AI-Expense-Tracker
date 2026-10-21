@@ -21,7 +21,11 @@ function Chat() {
   const [error, setError] = useState<unknown>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => endRef.current?.scrollIntoView({ block: 'nearest' }), [messages, busy])
+  // Braces matter: scrollIntoView may return a Promise in newer browsers, and an
+  // effect must return nothing or a cleanup function, otherwise React crashes.
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [messages, busy])
 
   const send = async (text: string) => {
     const message = text.trim()

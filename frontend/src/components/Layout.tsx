@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, LogOut, Moon, PiggyBank, ReceiptText, Sparkles, Sun, Upload, Wallet } from 'lucide-react'
+import { Landmark, LayoutDashboard, LogOut, Moon, PiggyBank, ReceiptText, Sparkles, Sun, Upload, Users, Wallet } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { api, clearToken, type Health } from '../lib/api'
@@ -9,6 +9,8 @@ const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/upload', label: 'Scan receipt', icon: Upload },
   { to: '/receipts', label: 'Receipts', icon: ReceiptText },
+  { to: '/statements', label: 'Statements', icon: Landmark },
+  { to: '/splits', label: 'Splits', icon: Users },
   { to: '/budgets', label: 'Budgets', icon: PiggyBank },
   { to: '/insights', label: 'AI insights', icon: Sparkles },
 ]

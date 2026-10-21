@@ -7,8 +7,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 import storage
-from backend import db
+from backend import db, splits
 from backend.auth import require_user
+from backend.statements import matching
 from categorizer import CANONICAL_CATEGORIES
 
 router = APIRouter(prefix="/receipts", tags=["Receipts"], dependencies=[Depends(require_user)])
@@ -104,7 +105,8 @@ def create_receipt(body: ReceiptIn):
                                 {"message": "This receipt looks like one you already saved.", "duplicate_of": dup})
     rid = _save(body)
     _record_corrections(body)
-    return {"id": rid}
+    bank = matching.match_receipt(rid)
+    return {"id": rid, "linked_transaction": bank["linked"], "match_suggestions": bank["suggestions"]}
 
 
 @router.get("")
@@ -130,12 +132,18 @@ def list_all(frm: Optional[str] = Query(None, alias="from"), to: Optional[str] =
     sql = (f"SELECT r.id, r.date, r.store, r.total, r.currency, r.engine_used, r.reconciliation_status, "
            f"(r.file_path IS NOT NULL) has_file, (SELECT COUNT(*) FROM line_items l WHERE l.receipt_id = r.id) "
            f"item_count, (SELECT group_concat(DISTINCT l.category) FROM line_items l WHERE l.receipt_id = r.id) "
-           f"categories FROM receipts r{where} ORDER BY r.date DESC, r.created_at DESC")
+           f"categories, s.id IS NOT NULL is_split, s.you_lent_minor, s.you_owe_minor, p.name payer_name, "
+           f"(SELECT t.id FROM transactions t WHERE t.matched_receipt_id = r.id) linked_transaction_id "
+           f"FROM receipts r LEFT JOIN splits s ON s.receipt_id = r.id LEFT JOIN people p ON p.id = s.payer_id"
+           f"{where} ORDER BY r.date DESC, r.created_at DESC")
     with storage.get_connection() as conn:
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     for r in rows:
         r["has_file"] = bool(r["has_file"])
         r["categories"] = (r["categories"] or "").split(",") if r["categories"] else []
+        lent, owe, payer = r.pop("you_lent_minor"), r.pop("you_owe_minor"), r.pop("payer_name")
+        r["split"] = ({"you_lent": splits.from_minor(lent, r["currency"]), "you_owe": splits.from_minor(owe, r["currency"]),
+                       "payer": payer or "You"} if r.pop("is_split") else None)
     return rows
 
 
@@ -148,7 +156,14 @@ def _get_or_404(receipt_id: str) -> dict:
 
 @router.get("/{receipt_id}")
 def get_one(receipt_id: str):
-    return _public(_get_or_404(receipt_id))
+    return {**_public(_get_or_404(receipt_id)), "split": splits.get_split(receipt_id),
+            "bank_match": matching.receipt_bank_match(receipt_id)}
+
+
+@router.get("/{receipt_id}/bank-candidates")
+def bank_candidates(receipt_id: str):
+    _get_or_404(receipt_id)
+    return matching.txn_candidates(receipt_id)
 
 
 @router.put("/{receipt_id}")
@@ -156,7 +171,10 @@ def update(receipt_id: str, body: ReceiptIn):
     existing = _get_or_404(receipt_id)
     _save(body, receipt_id=receipt_id, existing=existing)
     _record_corrections(body)
-    return _public(_get_or_404(receipt_id))
+    removed = splits.recompute(receipt_id)  # no-op when the receipt isn't split
+    bank = matching.match_receipt(receipt_id)  # links only when the receipt isn't linked yet
+    return {**_public(_get_or_404(receipt_id)), "split": splits.get_split(receipt_id), "split_removed": removed,
+            "bank_match": bank}
 
 
 @router.delete("/{receipt_id}")

@@ -9,6 +9,10 @@ import Insights from './pages/Insights'
 import Login from './pages/Login'
 import ReceiptDetail from './pages/ReceiptDetail'
 import Receipts from './pages/Receipts'
+import Splits from './pages/Splits'
+import StatementReview from './pages/StatementReview'
+import Statements from './pages/Statements'
+import Transactions from './pages/Transactions'
 import UploadPage from './pages/Upload'
 
 const queryClient = new QueryClient({
@@ -36,6 +40,10 @@ export default function App() {
             <Route path="upload" element={<UploadPage />} />
             <Route path="receipts" element={<Receipts />} />
             <Route path="receipts/:id" element={<ReceiptDetail />} />
+            <Route path="statements" element={<Statements />} />
+            <Route path="statements/transactions" element={<Transactions />} />
+            <Route path="statements/review" element={<StatementReview />} />
+            <Route path="splits" element={<Splits />} />
             <Route path="budgets" element={<Budgets />} />
             <Route path="insights" element={<Insights />} />
             <Route path="*" element={<Navigate to="/" replace />} />

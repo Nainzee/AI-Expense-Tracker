@@ -94,6 +94,8 @@ export default function Receipts() {
                       <Link to={`/receipts/${encodeURIComponent(r.id)}`} className="font-medium text-indigo-700 hover:underline dark:text-indigo-300">
                         {r.store}
                       </Link>
+                      {r.split && <span className="ml-2"><Badge tone="indigo">Split</Badge></span>}
+                      {r.linked_transaction_id && <span className="ml-2"><Badge tone="green">Bank matched</Badge></span>}
                     </td>
                     <td className="py-2 pr-4">
                       <div className="flex flex-wrap gap-1">
@@ -104,7 +106,14 @@ export default function Receipts() {
                       </div>
                     </td>
                     <td className="py-2 pr-4">{r.item_count}</td>
-                    <td className="py-2 pr-4 text-right font-medium tabular-nums">{money(r.total, r.currency)}</td>
+                    <td className="py-2 pr-4 text-right font-medium tabular-nums">
+                      {money(r.total, r.currency)}
+                      {r.split && (r.split.you_lent > 0 || r.split.you_owe > 0) && (
+                        <span className={`block text-xs font-normal ${r.split.you_lent > 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-800 dark:text-amber-300'}`}>
+                          {r.split.you_lent > 0 ? `You lent ${money(r.split.you_lent, r.currency)}` : `You owe ${money(r.split.you_owe, r.currency)}`}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

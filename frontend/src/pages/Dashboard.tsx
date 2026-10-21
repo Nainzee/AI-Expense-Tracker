@@ -46,7 +46,22 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          {s && s.split_count > 0 && <p className="text-sm text-slate-600 dark:text-slate-400">Split bills count only your share.</p>}
+          {s && s.source_mix.statements.count + s.source_mix.linked_count > 0 && (
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              {money(s.source_mix.receipts.amount, cur)} from receipts · {money(s.source_mix.statements.amount, cur)} from bank/UPI
+              {s.source_mix.linked_count > 0 && ` · ${s.source_mix.linked_count} payment${s.source_mix.linked_count === 1 ? '' : 's'} matched to receipts, counted once`}
+              {s.source_mix.needs_review_count > 0 && (
+                <>
+                  {' · '}
+                  <Link to="/statements/review" className="font-medium text-indigo-700 underline dark:text-indigo-300">{s.source_mix.needs_review_count} to review</Link>
+                </>
+              )}
+            </p>
+          )}
+        </div>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1">
             <label htmlFor="d-range" className="text-xs font-medium text-slate-700 dark:text-slate-300">Period</label>
@@ -85,19 +100,24 @@ export default function Dashboard() {
 
       {q.isLoading && <Spinner />}
       <ErrorBox error={q.error} />
-      {s && s.receipt_count === 0 && (
+      {s && s.payment_count === 0 && (
         <Card>
           <Empty>
-            No receipts in this period yet.{' '}
-            <Link to="/upload" className="font-medium text-indigo-700 underline dark:text-indigo-300">Scan your first receipt</Link>.
+            No spending in this period yet.{' '}
+            <Link to="/upload" className="font-medium text-indigo-700 underline dark:text-indigo-300">Scan a receipt</Link> or{' '}
+            <Link to="/statements" className="font-medium text-indigo-700 underline dark:text-indigo-300">import a bank statement</Link>.
           </Empty>
         </Card>
       )}
-      {s && s.receipt_count > 0 && (
+      {s && s.payment_count > 0 && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Kpi label="Total spent" value={money(s.total, cur)} sub={`${s.receipt_count} receipts`} />
-            <Kpi label="Average per receipt" value={money(s.average_per_receipt, cur)} />
+            <Kpi
+              label="Total spent"
+              value={money(s.total, cur)}
+              sub={`${s.receipt_count} receipt${s.receipt_count === 1 ? '' : 's'}${s.transaction_count ? ` · ${s.transaction_count} bank payment${s.transaction_count === 1 ? '' : 's'}` : ''}`}
+            />
+            <Kpi label="Average per payment" value={money(s.average_per_receipt, cur)} />
             <Kpi
               label={`This month (${mom?.month})`}
               value={money(mom?.current, cur)}

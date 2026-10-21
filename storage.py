@@ -220,15 +220,14 @@ def save_receipt(
         if is_new:
             receipt_id = f"REC-{month_key.replace('-', '')}-{uuid.uuid4().hex[:8]}"
 
-        verb = "INSERT" if is_new else "INSERT OR REPLACE"
+        cols = ("id, date, month, store, subtotal, tax, total, currency, payment_method, notes, created_at, "
+                "merchant_address, time, invoice_number, file_path, file_hash, engine_used, "
+                "reconciliation_status, raw_text")
+        # Edits upsert in place (INSERT OR REPLACE would delete the row and cascade-delete its split)
+        upsert = "" if is_new else (" ON CONFLICT(id) DO UPDATE SET "
+                                    + ", ".join(f"{c} = excluded.{c}" for c in cols.split(", ")[1:]))
         cur.execute(
-            f"""
-            {verb} INTO receipts
-            (id, date, month, store, subtotal, tax, total, currency, payment_method, notes, created_at,
-             merchant_address, time, invoice_number, file_path, file_hash, engine_used,
-             reconciliation_status, raw_text)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+            f"INSERT INTO receipts ({cols}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?){upsert}",
             (
                 receipt_id,
                 actual_date,
@@ -289,7 +288,7 @@ def get_receipt(receipt_id: str) -> Optional[dict]:
             return None
 
         receipt_dict = dict(row)
-        cur.execute("SELECT * FROM line_items WHERE receipt_id = ?", (receipt_id,))
+        cur.execute("SELECT * FROM line_items WHERE receipt_id = ? ORDER BY id", (receipt_id,))
         items = [dict(r) for r in cur.fetchall()]
         receipt_dict["items"] = items
         return receipt_dict
@@ -449,6 +448,12 @@ def get_yearly_data(year_key: Optional[str] = None) -> Optional[dict]:
     }
 
 
+def _personal_total(r: dict) -> float:
+    """Your share of a receipt: the split share when the bill is split, else the full total."""
+    share = r.get("my_share")
+    return float(share if share is not None else r.get("total", 0.0))
+
+
 def get_monthly_data(month_key: Optional[str] = None) -> Optional[dict]:
     """Compute comprehensive monthly aggregates and metrics directly from SQLite."""
     init_db()
@@ -470,14 +475,14 @@ def get_monthly_data(month_key: Optional[str] = None) -> Optional[dict]:
 
     for r in receipts:
         s = r.get("store", "Unknown Store")
-        r_tot = float(r.get("total", 0.0))
+        r_tot = _personal_total(r)
         store_totals[s] += r_tot
         store_counts[s] += 1
         currencies.append(r.get("currency", "₹"))
 
         for item in r.get("items", []):
             cat = item.get("category", "Other")
-            amt = float(item.get("amount", 0.0))
+            amt = float(item.get("amount", 0.0)) * float(item.get("share_weight", 1.0) or 0.0)
             category_totals[cat] += amt
             category_counts[cat] += 1
 
@@ -490,7 +495,7 @@ def get_monthly_data(month_key: Optional[str] = None) -> Optional[dict]:
         weekly[w_label] += r_tot
 
     dominant_curr = Counter(currencies).most_common(1)[0][0] if currencies else "₹"
-    grand_total = sum(float(r.get("total", 0.0)) for r in receipts)
+    grand_total = sum(_personal_total(r) for r in receipts)
     avg_per_receipt = grand_total / len(receipts) if receipts else 0.0
     top_cat = max(category_totals, key=category_totals.get) if category_totals else "—"
 
@@ -503,7 +508,7 @@ def get_monthly_data(month_key: Optional[str] = None) -> Optional[dict]:
         if idx > 0:
             prev_month = all_months_asc[idx - 1]
             prev_receipts = list_receipts(month_key=prev_month)
-            prev_total = sum(float(r.get("total", 0.0)) for r in prev_receipts)
+            prev_total = sum(_personal_total(r) for r in prev_receipts)
             if prev_total > 0:
                 mom_change_pct = round(((grand_total - prev_total) / prev_total) * 100, 1)
 

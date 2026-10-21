@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend import config, llm
-from backend.routers import analytics, auth, budgets, export, insights, receipts, scan
+from backend.routers import analytics, auth, budgets, export, insights, receipts, scan, splits, statements, transactions
 
 log = logging.getLogger("backend")
 
@@ -54,7 +54,7 @@ def categories():
     return {"categories": CANONICAL_CATEGORIES}
 
 
-for r in (auth, scan, receipts, analytics, budgets, insights, export):
+for r in (auth, scan, receipts, splits, statements, transactions, analytics, budgets, insights, export):
     api.include_router(r.router)
 app.include_router(api)
 app.add_api_route("/health", health, methods=["GET"], include_in_schema=False)

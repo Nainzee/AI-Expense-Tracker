@@ -114,6 +114,8 @@ export interface ReceiptSummary {
   has_file: boolean
   item_count: number
   categories: string[]
+  split?: { you_lent: number; you_owe: number; payer: string } | null
+  linked_transaction_id?: number | null
 }
 
 export interface Receipt {
@@ -134,6 +136,8 @@ export interface Receipt {
   raw_text: string | null
   has_file: boolean
   items: (Item & { id: number })[]
+  split?: Split | null
+  bank_match?: BankMatch
 }
 
 export interface ReceiptPayload extends Omit<Extraction, 'merchant_name'> {
@@ -171,6 +175,17 @@ export interface Summary {
   month_over_month: { month: string; previous_month: string; current: number; previous: number; change_pct: number | null }
   forecast: { month: string; spent: number; day: number; days_in_month: number; daily_average: number; projected_total: number }
   budget_status: BudgetStatus[]
+  split_count: number
+  transaction_count: number
+  payment_count: number
+  source_mix: SourceMix
+}
+
+export interface SourceMix {
+  receipts: { amount: number; count: number }
+  statements: { amount: number; count: number }
+  linked_count: number
+  needs_review_count: number
 }
 
 export interface Budget {
@@ -198,4 +213,209 @@ export interface Health {
   version: string
   auth_enabled: boolean
   ollama: { available: boolean; models: string[]; vlm: string; text_model: string }
+}
+
+// ─── Bill split ─────────────────────────────────────────────────────────────
+export interface Person {
+  id: number
+  name: string
+}
+
+export type SplitMethod = 'equal' | 'exact' | 'percent' | 'shares' | 'items'
+
+/** person_id null means "You". */
+export interface SplitIn {
+  payer_id: number | null
+  method: SplitMethod
+  participants: { person_id: number | null; value?: number | null }[]
+  items: { item_index: number; person_ids: (number | null)[] }[]
+}
+
+export interface Split {
+  receipt_id: string
+  method: SplitMethod
+  currency: string
+  total: number
+  payer: { id: number | null; name: string }
+  your_share: number
+  you_lent: number
+  you_owe: number
+  shares: { person_id: number | null; name: string; amount: number; value: number | null }[]
+  items: { item_index: number; person_ids: (number | null)[] }[]
+  created_at: string
+  updated_at: string
+}
+
+export interface SplitSummary {
+  receipt_id: string
+  store: string
+  date: string
+  method: SplitMethod
+  currency: string
+  total: number
+  payer: string
+  your_share: number
+  you_lent: number
+  you_owe: number
+}
+
+/** net > 0 means the person owes you. */
+export interface Balances {
+  totals: { currency: string; owed_to_you: number; you_owe: number }[]
+  people: { person_id: number; name: string; currency: string; net: number }[]
+}
+
+// ─── Bank / UPI statements ──────────────────────────────────────────────────
+export type TxnType =
+  | 'expense'
+  | 'income'
+  | 'transfer_self'
+  | 'transfer_person'
+  | 'refund'
+  | 'card_bill_payment'
+  | 'cash_withdrawal'
+  | 'investment'
+
+export const TXN_TYPE_LABEL: Record<TxnType, string> = {
+  expense: 'Spending',
+  transfer_person: 'Paid a person',
+  cash_withdrawal: 'Cash withdrawal',
+  income: 'Income',
+  refund: 'Refund',
+  transfer_self: 'Own-account transfer',
+  card_bill_payment: 'Credit card bill',
+  investment: 'Investment',
+}
+
+export interface ColumnMapping {
+  header_row: number
+  date: number
+  description: number
+  debit?: number | null
+  credit?: number | null
+  amount?: number | null
+  drcr?: number | null
+  balance?: number | null
+  reference?: number | null
+  date_order: 'dmy' | 'mdy' | 'ymd'
+}
+
+export interface PreviewTxn {
+  date: string
+  description: string
+  amount: number
+  direction: 'debit' | 'credit'
+  balance: number | null
+  merchant: string | null
+  txn_type: TxnType
+  category: string
+  needs_review: number
+}
+
+export interface StatementPreview {
+  token: string
+  filename: string
+  format: 'csv' | 'xlsx' | 'xls' | 'pdf'
+  source: string
+  account_hint: string | null
+  period_start: string | null
+  period_end: string | null
+  columns: string[]
+  sample_rows: string[][]
+  mapping: ColumnMapping | null
+  needs_mapping: boolean
+  rows_parsed: number
+  rows_skipped: number
+  likely_duplicates: number
+  likely_new: number
+  already_imported: boolean
+  transactions: PreviewTxn[]
+}
+
+export interface ImportSummary {
+  statement_id: number | null
+  rows_parsed: number
+  new: number
+  duplicates_skipped: number
+  auto_categorized: number
+  needs_review: number
+  matched_receipts: number
+  suggested_matches: number
+  rows_skipped: number
+}
+
+export interface Statement {
+  id: number
+  filename: string
+  format: string
+  source: string
+  account_label: string
+  account_hint: string | null
+  period_start: string | null
+  period_end: string | null
+  rows_new: number
+  rows_duplicate: number
+  imported_at: string
+  txn_count: number
+}
+
+export interface TxnBrief {
+  id: number
+  date: string
+  description: string
+  amount: number
+  direction: 'debit' | 'credit'
+  currency: string
+  merchant: string | null
+  category: string
+  txn_type: TxnType
+  match_source: 'auto' | 'user' | null
+  match_score: number | null
+}
+
+export interface Transaction extends TxnBrief {
+  balance: number | null
+  reference: string | null
+  counterparty: string | null
+  vpa: string | null
+  payee_key: string | null
+  channel: string | null
+  category_source: 'rule' | 'memory' | 'ai' | 'user' | 'none'
+  confidence: number
+  needs_review: boolean
+  excluded: boolean
+  matched_receipt_id: string | null
+  counted: boolean
+  receipt: { id: string; store: string; date: string; total: number } | null
+  suggestion_count: number
+}
+
+export interface MatchSuggestion {
+  transaction: TxnBrief
+  receipt: { id: string; store: string; date: string; total: number; currency: string }
+  score: number
+}
+
+export interface ReviewQueue {
+  needs_review: Transaction[]
+  match_suggestions: MatchSuggestion[]
+  count: number
+}
+
+export interface RecurringPayment {
+  payee_key: string
+  merchant: string
+  category: string | null
+  cadence: 'monthly' | 'weekly'
+  count: number
+  average_amount: number
+  last_date: string
+  next_expected: string
+  currency: string
+  monthly_cost: number
+}
+
+export interface BankMatch {
+  linked: TxnBrief | null
+  suggestions: { transaction: TxnBrief; score: number }[]
 }

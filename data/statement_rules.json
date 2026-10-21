@@ -1,0 +1,790 @@
+{
+  "merchants": [
+    {
+      "name": "Swiggy",
+      "patterns": [
+        "swiggy",
+        "instamart"
+      ],
+      "vpa": [
+        "swiggy"
+      ],
+      "category": "Dining"
+    },
+    {
+      "name": "Zomato",
+      "patterns": [
+        "zomato"
+      ],
+      "vpa": [
+        "zomato"
+      ],
+      "category": "Dining"
+    },
+    {
+      "name": "Dominos",
+      "patterns": [
+        "dominos",
+        "jubilant foodworks"
+      ],
+      "category": "Dining"
+    },
+    {
+      "name": "McDonalds",
+      "patterns": [
+        "mcdonalds",
+        "hardcastle"
+      ],
+      "category": "Dining"
+    },
+    {
+      "name": "KFC",
+      "patterns": [
+        "kfc",
+        "devyani"
+      ],
+      "category": "Dining"
+    },
+    {
+      "name": "Starbucks",
+      "patterns": [
+        "starbucks",
+        "tata starbucks"
+      ],
+      "category": "Dining"
+    },
+    {
+      "name": "Chaayos",
+      "patterns": [
+        "chaayos"
+      ],
+      "category": "Dining"
+    },
+    {
+      "name": "Blinkit",
+      "patterns": [
+        "blinkit",
+        "grofers"
+      ],
+      "vpa": [
+        "blinkit"
+      ],
+      "category": "Food"
+    },
+    {
+      "name": "Zepto",
+      "patterns": [
+        "zepto",
+        "kiranakart"
+      ],
+      "vpa": [
+        "zepto"
+      ],
+      "category": "Food"
+    },
+    {
+      "name": "BigBasket",
+      "patterns": [
+        "bigbasket",
+        "big basket",
+        "innovative retail"
+      ],
+      "category": "Food"
+    },
+    {
+      "name": "DMart",
+      "patterns": [
+        "dmart",
+        "avenue supermarts"
+      ],
+      "category": "Food"
+    },
+    {
+      "name": "Reliance Fresh",
+      "patterns": [
+        "reliance fresh",
+        "reliance smart",
+        "jiomart"
+      ],
+      "category": "Food"
+    },
+    {
+      "name": "More Retail",
+      "patterns": [
+        "more retail",
+        "more supermarket"
+      ],
+      "category": "Food"
+    },
+    {
+      "name": "Spencers",
+      "patterns": [
+        "spencers"
+      ],
+      "category": "Food"
+    },
+    {
+      "name": "Amazon",
+      "patterns": [
+        "amazon",
+        "amzn"
+      ],
+      "vpa": [
+        "amazon",
+        "amzn"
+      ],
+      "category": "Other",
+      "confidence": 0.6
+    },
+    {
+      "name": "Flipkart",
+      "patterns": [
+        "flipkart"
+      ],
+      "vpa": [
+        "flipkart"
+      ],
+      "category": "Other",
+      "confidence": 0.6
+    },
+    {
+      "name": "Meesho",
+      "patterns": [
+        "meesho"
+      ],
+      "category": "Apparel",
+      "confidence": 0.7
+    },
+    {
+      "name": "Myntra",
+      "patterns": [
+        "myntra"
+      ],
+      "category": "Apparel"
+    },
+    {
+      "name": "Ajio",
+      "patterns": [
+        "ajio"
+      ],
+      "category": "Apparel"
+    },
+    {
+      "name": "Nykaa",
+      "patterns": [
+        "nykaa"
+      ],
+      "category": "Personal Care"
+    },
+    {
+      "name": "Uber",
+      "patterns": [
+        "uber"
+      ],
+      "vpa": [
+        "uber"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "Ola",
+      "patterns": [
+        "ola cabs",
+        "olacabs",
+        "ani technologies"
+      ],
+      "vpa": [
+        "olacabs",
+        "ola"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "Rapido",
+      "patterns": [
+        "rapido",
+        "roppen"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "IRCTC",
+      "patterns": [
+        "irctc"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "Metro",
+      "patterns": [
+        "metro rail",
+        "bmrcl",
+        "dmrc",
+        "mmrcl",
+        "metro card"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "FASTag",
+      "patterns": [
+        "fastag",
+        "netc"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "Indian Oil",
+      "patterns": [
+        "indian oil",
+        "iocl"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "Bharat Petroleum",
+      "patterns": [
+        "bharat petroleum",
+        "bpcl"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "HP Petrol",
+      "patterns": [
+        "hindustan petroleum",
+        "hpcl"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "Shell",
+      "patterns": [
+        "shell india",
+        "shell petrol"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "MakeMyTrip",
+      "patterns": [
+        "makemytrip",
+        "mmt travel"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "IndiGo",
+      "patterns": [
+        "indigo",
+        "interglobe"
+      ],
+      "category": "Transportation"
+    },
+    {
+      "name": "Netflix",
+      "patterns": [
+        "netflix"
+      ],
+      "vpa": [
+        "netflix"
+      ],
+      "category": "Entertainment"
+    },
+    {
+      "name": "Spotify",
+      "patterns": [
+        "spotify"
+      ],
+      "vpa": [
+        "spotify"
+      ],
+      "category": "Entertainment"
+    },
+    {
+      "name": "Hotstar",
+      "patterns": [
+        "hotstar",
+        "disney",
+        "jiohotstar"
+      ],
+      "category": "Entertainment"
+    },
+    {
+      "name": "Prime Video",
+      "patterns": [
+        "prime video",
+        "amazon prime"
+      ],
+      "category": "Entertainment"
+    },
+    {
+      "name": "YouTube",
+      "patterns": [
+        "youtube"
+      ],
+      "category": "Entertainment"
+    },
+    {
+      "name": "Google Play",
+      "patterns": [
+        "google play",
+        "google pla"
+      ],
+      "category": "Entertainment"
+    },
+    {
+      "name": "BookMyShow",
+      "patterns": [
+        "bookmyshow",
+        "bigtree"
+      ],
+      "category": "Entertainment"
+    },
+    {
+      "name": "PVR INOX",
+      "patterns": [
+        "pvr",
+        "inox"
+      ],
+      "category": "Entertainment"
+    },
+    {
+      "name": "Jio",
+      "patterns": [
+        "jio",
+        "reliance jio"
+      ],
+      "vpa": [
+        "jio"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "Airtel",
+      "patterns": [
+        "airtel",
+        "bharti"
+      ],
+      "vpa": [
+        "airtel"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "Vi",
+      "patterns": [
+        "vodafone",
+        "vi prepaid",
+        "vodafone idea"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "BSNL",
+      "patterns": [
+        "bsnl"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "ACT Fibernet",
+      "patterns": [
+        "act fibernet",
+        "atria convergence"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "Electricity",
+      "patterns": [
+        "bescom",
+        "msedcl",
+        "tata power",
+        "adani electricity",
+        "bses",
+        "tneb",
+        "tangedco",
+        "cesc",
+        "electricity",
+        "kseb",
+        "uppcl",
+        "pspcl",
+        "torrent power"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "Gas",
+      "patterns": [
+        "indane",
+        "hp gas",
+        "bharat gas",
+        "mahanagar gas",
+        "igl",
+        "adani gas",
+        "gas bill"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "Water",
+      "patterns": [
+        "bwssb",
+        "water bill",
+        "jal board"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "LIC",
+      "patterns": [
+        "lic of india",
+        "lic premium",
+        "life insurance corp"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "Insurance",
+      "patterns": [
+        "hdfc life",
+        "icici prudential",
+        "icici lombard",
+        "star health",
+        "bajaj allianz",
+        "max life",
+        "sbi life",
+        "policybazaar",
+        "insurance premium"
+      ],
+      "category": "Utilities"
+    },
+    {
+      "name": "Apollo Pharmacy",
+      "patterns": [
+        "apollo pharmacy",
+        "apollo medplus",
+        "apollo"
+      ],
+      "category": "Medical"
+    },
+    {
+      "name": "MedPlus",
+      "patterns": [
+        "medplus"
+      ],
+      "category": "Medical"
+    },
+    {
+      "name": "PharmEasy",
+      "patterns": [
+        "pharmeasy"
+      ],
+      "category": "Medical"
+    },
+    {
+      "name": "Netmeds",
+      "patterns": [
+        "netmeds"
+      ],
+      "category": "Medical"
+    },
+    {
+      "name": "Tata 1mg",
+      "patterns": [
+        "1mg"
+      ],
+      "category": "Medical"
+    },
+    {
+      "name": "Practo",
+      "patterns": [
+        "practo"
+      ],
+      "category": "Medical"
+    },
+    {
+      "name": "Croma",
+      "patterns": [
+        "croma",
+        "infiniti retail"
+      ],
+      "category": "Electronics"
+    },
+    {
+      "name": "Reliance Digital",
+      "patterns": [
+        "reliance digital"
+      ],
+      "category": "Electronics"
+    },
+    {
+      "name": "Urban Company",
+      "patterns": [
+        "urban company",
+        "urbanclap"
+      ],
+      "category": "Household"
+    },
+    {
+      "name": "IKEA",
+      "patterns": [
+        "ikea"
+      ],
+      "category": "Home & Hardware"
+    },
+    {
+      "name": "Pepperfry",
+      "patterns": [
+        "pepperfry"
+      ],
+      "category": "Home & Hardware"
+    },
+    {
+      "name": "Decathlon",
+      "patterns": [
+        "decathlon"
+      ],
+      "category": "Apparel"
+    }
+  ],
+  "type_rules": [
+    {
+      "type": "card_bill_payment",
+      "patterns": [
+        "credit card payment",
+        "cc payment",
+        "card bill",
+        "bbps cc",
+        "creditcard payment",
+        "cred club",
+        "cc autopay",
+        "card payment received"
+      ]
+    },
+    {
+      "type": "cash_withdrawal",
+      "patterns": [
+        "atm",
+        "atw",
+        "nwd",
+        "cash wdl",
+        "cash withdrawal",
+        "atm wdl",
+        "awb"
+      ]
+    },
+    {
+      "type": "investment",
+      "patterns": [
+        "sip",
+        "mutual fund",
+        "zerodha",
+        "groww",
+        "kuvera",
+        "indian clearing corp",
+        "bse star mf",
+        "nse clearing",
+        "ppf deposit",
+        "recurring deposit",
+        "fd booking",
+        "upstox",
+        "coin by zerodha"
+      ]
+    },
+    {
+      "type": "refund",
+      "patterns": [
+        "refund",
+        "reversal",
+        "cashback",
+        "chargeback",
+        "rev upi"
+      ]
+    },
+    {
+      "type": "income",
+      "patterns": [
+        "salary",
+        "sal credit",
+        "interest credit",
+        "int pd",
+        "int paid",
+        "dividend",
+        "int credit",
+        "sb int"
+      ]
+    }
+  ],
+  "self_transfer_patterns": [
+    "self",
+    "own account",
+    "own a c",
+    "to self",
+    "sweep",
+    "transfer to own"
+  ],
+  "keyword_rules": [
+    {
+      "category": "Drinks",
+      "keywords": [
+        "nescafe",
+        "chai",
+        "tea",
+        "coffee",
+        "juice",
+        "juices",
+        "chilling point",
+        "beverages",
+        "lassi",
+        "shakes"
+      ]
+    },
+    {
+      "category": "Dining",
+      "keywords": [
+        "cafe",
+        "cafes",
+        "restaurant",
+        "restro",
+        "dhaba",
+        "bistro",
+        "lounge",
+        "kitchen",
+        "cookhouse",
+        "burger",
+        "pizza",
+        "biryani",
+        "momos",
+        "canteen",
+        "mess",
+        "eatery",
+        "food court",
+        "temptation",
+        "tasty"
+      ]
+    },
+    {
+      "category": "Food",
+      "keywords": [
+        "snacks",
+        "sweets",
+        "bakers",
+        "bakery",
+        "dairy",
+        "kirana",
+        "grocery",
+        "provision",
+        "provisions",
+        "food product",
+        "food products",
+        "fruits",
+        "vegetables",
+        "q mart",
+        "mart",
+        "supermarket",
+        "general store"
+      ]
+    },
+    {
+      "category": "Personal Care",
+      "keywords": [
+        "salon",
+        "parlour",
+        "parlor",
+        "unisex",
+        "spa",
+        "barber",
+        "cosmetics",
+        "beauty"
+      ]
+    },
+    {
+      "category": "Medical",
+      "keywords": [
+        "medical",
+        "medicals",
+        "chemist",
+        "pharmacy",
+        "pharma",
+        "clinic",
+        "hospital",
+        "diagnostics"
+      ]
+    },
+    {
+      "category": "Apparel",
+      "keywords": [
+        "garments",
+        "fashion",
+        "boutique",
+        "tailor",
+        "footwear",
+        "clothing",
+        "outzidr",
+        "littleboxindia"
+      ]
+    },
+    {
+      "category": "Entertainment",
+      "keywords": [
+        "google play",
+        "play store",
+        "cinema",
+        "pvr",
+        "inox",
+        "bookmyshow",
+        "jiohotstar",
+        "hotstar",
+        "gaming"
+      ]
+    },
+    {
+      "category": "Transportation",
+      "keywords": [
+        "petroleum",
+        "fuel",
+        "filling station",
+        "petrol pump",
+        "parking",
+        "toll",
+        "fastag",
+        "auto stand"
+      ]
+    },
+    {
+      "category": "Office & Stationery",
+      "keywords": [
+        "stationery",
+        "stationers",
+        "xerox",
+        "photocopy",
+        "printers",
+        "book depot",
+        "graphy"
+      ]
+    },
+    {
+      "category": "Electronics",
+      "keywords": [
+        "mobiles",
+        "electronics",
+        "computers",
+        "telecom"
+      ]
+    },
+    {
+      "category": "Household",
+      "keywords": [
+        "agencies",
+        "traders",
+        "enterprises",
+        "hardware",
+        "plastics",
+        "utensils"
+      ],
+      "confidence": 0.6
+    }
+  ]
+}
