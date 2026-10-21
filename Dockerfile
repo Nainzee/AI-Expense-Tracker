@@ -26,8 +26,8 @@ RUN python sample_generator.py
 # Expose Web UI (7860) and API (8000)
 EXPOSE 7860 8000
 
-ENV PORT=7860
+ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 
-# Default command launches the Gradio web interface
-CMD ["python", "app.py"]
+# Default command launches FastAPI backend on dynamic PORT
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
