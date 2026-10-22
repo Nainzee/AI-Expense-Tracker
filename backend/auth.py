@@ -24,9 +24,8 @@ def _jwt_secret() -> str:
 
 
 def init_users_table() -> None:
-    """Ensure the users table exists in SQLite database."""
-    storage.init_db()
-    with storage.get_connection() as conn:
+    """Ensure the users table exists in the central authentication database."""
+    with storage.get_auth_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,12 +64,16 @@ def register_user(username: str, password: str) -> bool:
     pw_hash, salt = hash_password(password)
     now = datetime.now(timezone.utc).isoformat()
     try:
-        with storage.get_connection() as conn:
+        with storage.get_auth_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?)",
                 (u, pw_hash, salt, now)
             )
             conn.commit()
+
+        # Pre-initialize user's dedicated personal database
+        conn = storage.get_connection(user=u)
+        conn.close()
         return True
     except sqlite3.IntegrityError:
         return False
@@ -79,7 +82,7 @@ def register_user(username: str, password: str) -> bool:
 def check_db_user(username: str, password: str) -> bool:
     """Check credentials against SQLite users table."""
     init_users_table()
-    with storage.get_connection() as conn:
+    with storage.get_auth_connection() as conn:
         row = conn.execute(
             "SELECT password_hash, salt FROM users WHERE username = ? COLLATE NOCASE",
             (username.strip(),)
@@ -92,7 +95,7 @@ def check_db_user(username: str, password: str) -> bool:
 def has_registered_users() -> bool:
     """Check if any users are registered in SQLite."""
     init_users_table()
-    with storage.get_connection() as conn:
+    with storage.get_auth_connection() as conn:
         row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
         return bool(row and row[0] > 0)
 
@@ -117,9 +120,20 @@ def create_token(username: str) -> str:
 
 
 def require_user(creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
-    """FastAPI dependency: validate Bearer token and return username."""
+    """FastAPI dependency: validate Bearer token, set current_user context, and return username."""
     if config.auth_disabled():
+        if creds and creds.credentials:
+            try:
+                payload = jwt.decode(creds.credentials, _jwt_secret(), algorithms=["HS256"])
+                sub = str(payload.get("sub", "")).strip()
+                if sub:
+                    storage.set_current_user(sub)
+                    return sub
+            except Exception:
+                pass
+        storage.set_current_user("dev")
         return "dev"
+
     unauthorized = HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated",
                                  headers={"WWW-Authenticate": "Bearer"})
     if creds is None or creds.scheme.lower() != "bearer":
@@ -131,4 +145,6 @@ def require_user(creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) 
     sub = str(payload.get("sub", "")).strip()
     if not sub:
         raise unauthorized
+
+    storage.set_current_user(sub)
     return sub

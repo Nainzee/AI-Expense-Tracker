@@ -68,6 +68,53 @@ def test_signup_and_login(monkeypatch, tmp_path):
     assert me.json()["username"] == "bob"
 
 
+def test_user_session_isolation(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUTH_DISABLED", "0")
+    monkeypatch.setenv("RECEIPTS_DB_PATH", str(tmp_path / "test.db"))
+
+    # 1. User 1 (Alice) signs up
+    res1 = client.post("/api/v1/auth/signup", json={"username": "alice", "password": "password123"})
+    assert res1.status_code == 201
+    tok1 = res1.json()["access_token"]
+    h1 = {"Authorization": f"Bearer {tok1}"}
+
+    # Alice initially has 0 receipts
+    assert client.get("/api/v1/receipts", headers=h1).json() == []
+
+    # 2. User 2 (Bob) signs up
+    res2 = client.post("/api/v1/auth/signup", json={"username": "bob", "password": "password456"})
+    assert res2.status_code == 201
+    tok2 = res2.json()["access_token"]
+    h2 = {"Authorization": f"Bearer {tok2}"}
+
+    # Bob initially has 0 receipts
+    assert client.get("/api/v1/receipts", headers=h2).json() == []
+
+    # Alice creates a receipt
+    body = {
+        "merchant_name": "Alice Store",
+        "date": "2026-10-22",
+        "total": 500.0,
+        "currency": "INR",
+        "items": [{"item_name": "Book", "category": "Office & Stationery", "amount": 500.0, "quantity": 1}],
+    }
+    r = client.post("/api/v1/receipts", json=body, headers=h1)
+    assert r.status_code == 200
+
+    # Alice sees 1 receipt
+    alice_receipts = client.get("/api/v1/receipts", headers=h1).json()
+    assert len(alice_receipts) == 1
+    assert alice_receipts[0]["store"] == "Alice Store"
+
+    # Bob STILL sees 0 receipts (complete data isolation)
+    bob_receipts = client.get("/api/v1/receipts", headers=h2).json()
+    assert len(bob_receipts) == 0
+
+    # Bob's dashboard shows 0 total spent
+    bob_summary = client.get("/api/v1/analytics/summary", headers=h2).json()
+    assert bob_summary["total_spent"] == 0.0
+
+
 def test_full_flow():
     with open(SAMPLE, "rb") as f:
         scan = client.post("/api/v1/scan", files={"file": ("r.png", f, "image/png")}).json()

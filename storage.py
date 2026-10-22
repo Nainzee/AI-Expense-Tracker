@@ -15,11 +15,46 @@ import os
 import sqlite3
 import uuid
 from collections import Counter, defaultdict
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB_FILE = os.path.join(BASE_DIR, "receipts_db", "receipts.db")
+
+_current_user_var: ContextVar[Optional[str]] = ContextVar("current_user", default=None)
+
+
+def set_current_user(username: Optional[str]) -> None:
+    """Set the active user context for per-user database routing."""
+    _current_user_var.set(username)
+
+
+def get_current_user() -> Optional[str]:
+    """Retrieve the currently active user context."""
+    return _current_user_var.get()
+
+
+def auth_db_file() -> str:
+    """Central database file for user credentials and authentication."""
+    path = os.environ.get("RECEIPTS_DB_PATH", "").strip()
+    if path and path.endswith(".db"):
+        base_dir = os.path.dirname(os.path.abspath(path))
+    else:
+        base_dir = os.path.join(BASE_DIR, "receipts_db")
+    os.makedirs(base_dir, exist_ok=True)
+    return os.path.join(base_dir, "auth.db")
+
+
+def get_auth_connection() -> sqlite3.Connection:
+    """Connection specifically for the shared user authentication database."""
+    path = auth_db_file()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.row_factory = sqlite3.Row
+    return conn
+
 
 # Legacy display symbols -> ISO 4217 codes (v3 stores ISO codes only)
 SYMBOL_TO_ISO = {"₹": "INR", "RS": "INR", "RS.": "INR", "INR": "INR", "$": "USD", "USD": "USD",
@@ -36,9 +71,23 @@ def to_iso_currency(value: Optional[str]) -> str:
     return v if (len(v) == 3 and v.isalpha()) else "INR"
 
 
-def db_file() -> str:
-    """Database path; overridable via RECEIPTS_DB_PATH (read on each call so tests can swap it)."""
+def db_file(user: Optional[str] = None) -> str:
+    """Database path; if a user is active or provided, returns that user's isolated database."""
+    active_user = user or get_current_user()
     path = os.environ.get("RECEIPTS_DB_PATH", "").strip()
+
+    if active_user:
+        safe_user = "".join(c for c in active_user if c.isalnum() or c in ("-", "_")).lower()
+        if not safe_user:
+            safe_user = "user"
+        if path and path.endswith(".db"):
+            base_dir = os.path.dirname(os.path.abspath(path))
+        else:
+            base_dir = os.path.join(BASE_DIR, "receipts_db")
+        user_dir = os.path.join(base_dir, "users")
+        os.makedirs(user_dir, exist_ok=True)
+        return os.path.join(user_dir, f"{safe_user}.db")
+
     if not path or not path.endswith(".db"):
         return DEFAULT_DB_FILE
     return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
@@ -48,67 +97,78 @@ def legacy_json_file() -> str:
     return os.path.join(os.path.dirname(db_file()), "receipts.json")
 
 
-def get_connection() -> sqlite3.Connection:
-    """Create a SQLite connection with foreign keys enabled."""
-    path = db_file()
+def _init_tables(conn: sqlite3.Connection):
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS receipts (
+            id TEXT PRIMARY KEY,
+            date TEXT NOT NULL,
+            month TEXT NOT NULL,
+            store TEXT NOT NULL,
+            subtotal REAL DEFAULT 0.0,
+            tax REAL DEFAULT 0.0,
+            total REAL NOT NULL,
+            currency TEXT DEFAULT '₹',
+            payment_method TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS line_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id TEXT NOT NULL,
+            item_name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            amount REAL NOT NULL,
+            quantity REAL DEFAULT 1.0,
+            unit_price REAL DEFAULT 0.0,
+            confidence REAL DEFAULT 1.0,
+            FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS user_corrections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            raw_text TEXT NOT NULL,
+            normalized_text TEXT NOT NULL,
+            category TEXT NOT NULL,
+            store TEXT DEFAULT '',
+            timestamp TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_receipts_month ON receipts(month);
+        CREATE INDEX IF NOT EXISTS idx_line_items_receipt ON line_items(receipt_id);
+        CREATE INDEX IF NOT EXISTS idx_corrections_norm ON user_corrections(normalized_text);
+    """)
+
+
+def init_db(conn: Optional[sqlite3.Connection] = None):
+    """Initialize database tables and run automatic migration if needed."""
+    if conn is not None:
+        _init_tables(conn)
+        from backend.db import migrate
+        migrate(conn)
+        return
+
+    with get_connection() as c:
+        _init_tables(c)
+        _migrate_legacy_json_if_needed(c)
+        from backend.db import migrate
+        migrate(c)
+
+
+def get_connection(user: Optional[str] = None) -> sqlite3.Connection:
+    """Create a SQLite connection with foreign keys enabled.
+    
+    If the target database is new or empty, automatically initializes all schema migrations.
+    """
+    path = db_file(user)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    is_new = not os.path.exists(path) or os.path.getsize(path) == 0
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.row_factory = sqlite3.Row
+    if is_new:
+        init_db(conn)
     return conn
-
-
-def init_db():
-    """Initialize database tables and run automatic migration if needed."""
-    with get_connection() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS receipts (
-                id TEXT PRIMARY KEY,
-                date TEXT NOT NULL,
-                month TEXT NOT NULL,
-                store TEXT NOT NULL,
-                subtotal REAL DEFAULT 0.0,
-                tax REAL DEFAULT 0.0,
-                total REAL NOT NULL,
-                currency TEXT DEFAULT '₹',
-                payment_method TEXT DEFAULT '',
-                notes TEXT DEFAULT '',
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS line_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                receipt_id TEXT NOT NULL,
-                item_name TEXT NOT NULL,
-                category TEXT NOT NULL,
-                amount REAL NOT NULL,
-                quantity REAL DEFAULT 1.0,
-                unit_price REAL DEFAULT 0.0,
-                confidence REAL DEFAULT 1.0,
-                FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS user_corrections (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                raw_text TEXT NOT NULL,
-                normalized_text TEXT NOT NULL,
-                category TEXT NOT NULL,
-                store TEXT DEFAULT '',
-                timestamp TEXT NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_receipts_month ON receipts(month);
-            CREATE INDEX IF NOT EXISTS idx_line_items_receipt ON line_items(receipt_id);
-            CREATE INDEX IF NOT EXISTS idx_corrections_norm ON user_corrections(normalized_text);
-        """)
-
-    # Check for legacy JSON migration
-    _migrate_legacy_json_if_needed()
-
-    # v3 schema migrations (idempotent, tracked via PRAGMA user_version)
-    from backend.db import migrate
-    with get_connection() as conn:
-        migrate(conn)
 
 
 def _migrate_legacy_json_if_needed():

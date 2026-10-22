@@ -11,7 +11,9 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+import jwt
 
+import storage
 from backend import config, llm
 from backend.routers import analytics, auth, budgets, export, insights, receipts, scan, splits, statements, transactions
 
@@ -20,6 +22,30 @@ log = logging.getLogger("backend")
 app = FastAPI(title="Smart Expense Tracker API", version=config.VERSION, docs_url="/docs", redoc_url="/redoc")
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_credentials=False,
                    allow_methods=["*"], allow_headers=["Authorization", "Content-Type"])
+
+
+@app.middleware("http")
+async def user_context_middleware(request: Request, call_next):
+    auth_header = request.headers.get("Authorization")
+    username = None
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        try:
+            key = config.secret_key() or "smart-expense-tracker-jwt-secret-key-3.0-secure"
+            payload = jwt.decode(token, key, algorithms=["HS256"])
+            username = str(payload.get("sub", "")).strip() or None
+        except Exception:
+            username = None
+
+    if not username and config.auth_disabled():
+        username = "dev"
+
+    storage.set_current_user(username)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        storage.set_current_user(None)
 
 
 @app.exception_handler(Exception)
