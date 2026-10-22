@@ -112,7 +112,8 @@ def test_user_session_isolation(monkeypatch, tmp_path):
 
     # Bob's dashboard shows 0 total spent
     bob_summary = client.get("/api/v1/analytics/summary", headers=h2).json()
-    assert bob_summary["total_spent"] == 0.0
+    assert bob_summary["total"] == 0.0
+    assert bob_summary["receipt_count"] == 0
 
 
 def test_full_flow():
