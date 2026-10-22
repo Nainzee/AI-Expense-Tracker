@@ -150,7 +150,7 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
 
     with get_connection() as c:
         _init_tables(c)
-        _migrate_legacy_json_if_needed(c)
+        _migrate_legacy_json_if_needed()
         from backend.db import migrate
         migrate(c)
 
