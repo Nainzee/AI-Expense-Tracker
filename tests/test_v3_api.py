@@ -36,6 +36,38 @@ def test_login_unconfigured(monkeypatch):
     assert client.post("/api/v1/auth/login", json={"username": "a", "password": "b"}).status_code == 503
 
 
+def test_signup_and_login(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUTH_DISABLED", "0")
+    monkeypatch.setenv("RECEIPTS_DB_PATH", str(tmp_path / "test.db"))
+    # Test signup
+    res = client.post("/api/v1/auth/signup", json={"username": "bob", "password": "password123"})
+    assert res.status_code == 201
+    assert res.json()["username"] == "bob"
+
+    # Duplicate username fails
+    res_dup = client.post("/api/v1/auth/signup", json={"username": "bob", "password": "password123"})
+    assert res_dup.status_code == 400
+
+    # Short password fails
+    res_short = client.post("/api/v1/auth/signup", json={"username": "bobby", "password": "12"})
+    assert res_short.status_code == 422
+
+    # Login with wrong password fails
+    res_fail = client.post("/api/v1/auth/login", json={"username": "bob", "password": "wrongpassword"})
+    assert res_fail.status_code == 401
+
+    # Login with correct password succeeds
+    res_ok = client.post("/api/v1/auth/login", json={"username": "bob", "password": "password123"})
+    assert res_ok.status_code == 200
+    assert "access_token" in res_ok.json()
+
+    # Access protected route
+    h = {"Authorization": f"Bearer {res_ok.json()['access_token']}"}
+    me = client.get("/api/v1/auth/me", headers=h)
+    assert me.status_code == 200
+    assert me.json()["username"] == "bob"
+
+
 def test_full_flow():
     with open(SAMPLE, "rb") as f:
         scan = client.post("/api/v1/scan", files={"file": ("r.png", f, "image/png")}).json()

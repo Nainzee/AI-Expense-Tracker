@@ -1,10 +1,16 @@
 // Typed API client. Token lives in localStorage; a 401 clears it and sends the user to /login.
 
 const TOKEN_KEY = 'auth_token'
+const USER_KEY = 'auth_user'
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY)
 export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY)
+export const getUser = () => localStorage.getItem(USER_KEY) || ''
+export const setUser = (u: string) => localStorage.setItem(USER_KEY, u)
+export const clearToken = () => {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(USER_KEY)
+}
 
 export class ApiError extends Error {
   status: number

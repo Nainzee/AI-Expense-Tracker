@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { Landmark, LayoutDashboard, LogOut, Moon, PiggyBank, ReceiptText, Sparkles, Sun, Upload, Users, Wallet } from 'lucide-react'
+import { Landmark, LayoutDashboard, LogOut, Moon, PiggyBank, ReceiptText, Sparkles, Sun, Upload, User, Users, Wallet } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { api, clearToken, type Health } from '../lib/api'
+import { api, clearToken, getUser, type Health } from '../lib/api'
 import { Badge } from './ui'
 
 const nav = [
@@ -30,7 +30,13 @@ export default function Layout() {
   const { dark, toggle } = useTheme()
   const navigate = useNavigate()
   const health = useQuery({ queryKey: ['health'], queryFn: () => api<Health>('/health'), refetchInterval: 30000 })
+  const userQuery = useQuery({
+    queryKey: ['me'],
+    queryFn: () => api<{ username: string }>('/auth/me'),
+    retry: false,
+  })
   const aiOn = health.data?.ollama.available
+  const currentUsername = userQuery.data?.username || getUser() || 'User'
 
   const logout = () => {
     clearToken()
@@ -82,16 +88,19 @@ export default function Layout() {
           >
             {dark ? <Sun className="h-5 w-5" aria-hidden="true" /> : <Moon className="h-5 w-5" aria-hidden="true" />}
           </button>
-          {health.data?.auth_enabled !== false && (
-            <button
-              type="button"
-              onClick={logout}
-              aria-label="Log out"
-              className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              <LogOut className="h-5 w-5" aria-hidden="true" />
-            </button>
-          )}
+          <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-200">
+            <User className="h-3.5 w-3.5 text-indigo-500" aria-hidden="true" />
+            <span className="font-semibold">{currentUsername}</span>
+          </div>
+          <button
+            type="button"
+            onClick={logout}
+            title="Log out"
+            aria-label="Log out"
+            className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 hover:text-red-600 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-red-400"
+          >
+            <LogOut className="h-5 w-5" aria-hidden="true" />
+          </button>
         </header>
         <main id="main" className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">
           <Outlet />
