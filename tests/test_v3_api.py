@@ -99,7 +99,7 @@ def test_user_session_isolation(monkeypatch, tmp_path):
         "items": [{"item_name": "Book", "category": "Office & Stationery", "amount": 500.0, "quantity": 1}],
     }
     r = client.post("/api/v1/receipts", json=body, headers=h1)
-    assert r.status_code == 200
+    assert r.status_code == 201
 
     # Alice sees 1 receipt
     alice_receipts = client.get("/api/v1/receipts", headers=h1).json()

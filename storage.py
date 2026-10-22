@@ -72,11 +72,12 @@ def to_iso_currency(value: Optional[str]) -> str:
 
 
 def db_file(user: Optional[str] = None) -> str:
-    """Database path; if a user is active or provided, returns that user's isolated database."""
+    """Database path; if a real authenticated user is active, returns that user's isolated database."""
     active_user = user or get_current_user()
     path = os.environ.get("RECEIPTS_DB_PATH", "").strip()
 
-    if active_user:
+    # Only isolate into per-user database if a specific named user is active and not default "dev"
+    if active_user and active_user.lower() != "dev":
         safe_user = "".join(c for c in active_user if c.isalnum() or c in ("-", "_")).lower()
         if not safe_user:
             safe_user = "user"
